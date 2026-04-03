@@ -1,0 +1,16 @@
+{
+  "class": {
+    "prefix": ["Data", "Core", "Rapid", "Safe", "Smart"],
+    "middle": ["Cache", "Signal", "Pixel", "Vector", "Buffer"],
+    "suffixNoun": ["Manager", "Handler", "Store", "Service", "Builder"]
+  },
+  "method": {
+    "verb": ["load", "fetch", "build", "update", "merge", "reset"],
+    "object": ["Cache", "Signal", "Config", "Buffer", "Record", "Value"],
+    "suffix": ["IfNeeded", "WithOptions", "Safely", "ForIndex", "InRange"]
+  },
+  "property": {
+    "adjective": ["current", "active", "cached", "local", "shared"],
+    "noun": ["Value", "Config", "Index", "Buffer", "State", "Count"]
+  }
+}

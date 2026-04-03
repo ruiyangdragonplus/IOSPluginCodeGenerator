@@ -1,0 +1,15 @@
+{
+  "language": "objc",
+  "outputDir": "./output",
+  "classCount": 6,
+  "totalLineRange": [500, 900],
+  "linesPerClassRange": [60, 180],
+  "methodsPerClassRange": [4, 8],
+  "propertiesPerClassRange": [2, 5],
+  "classPrefix": "AB",
+  "incremental": true,
+  "overwrite": false,
+  "randomSeed": 12345,
+  "stateFile": "./config/state.json",
+  "vocabularyFile": "./config/vocabulary.json"
+}
