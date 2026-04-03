@@ -131,9 +131,9 @@ class FileWriter:
         if self.written_files:
             print("\n已写入文件:")
             for f in self.written_files:
-                print(f"  ✓ {f}")
+                print(f"  [OK] {f}")
         
         if self.skipped_files:
             print("\n跳过文件:")
             for f in self.skipped_files:
-                print(f"  ⊘ {f}")
+                print(f"  [SKIP] {f}")

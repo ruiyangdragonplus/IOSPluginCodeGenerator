@@ -78,6 +78,8 @@ class LineBudget:
                 # 在范围内随机
                 min_lines = max(self.lines_per_class_min, int(avg_lines * 0.7))
                 max_lines = min(self.lines_per_class_max, int(avg_lines * 1.3))
+                # 确保 min_lines 不超过 max_lines
+                min_lines = min(min_lines, max_lines)
                 target_lines = self.random.randint(min_lines, max_lines)
             
             # 确保不超过总行数
