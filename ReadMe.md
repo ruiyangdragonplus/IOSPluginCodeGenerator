@@ -1,575 +1,100 @@
-# iOS 原生代码生成工具技术方案文档
+# iOS 插件代码生成器
 
-## 1. 项目概述
+一个基于 Python 的 iOS 原生代码批量生成工具，采用词库驱动命名方式，支持 Objective-C 和 C++ 两种语言，具备增量生成、行数控制和自动统计等功能。
 
-### 1.1 项目目标
-开发一个运行于 Windows 环境的代码生成工具，用于**合规测试场景**下批量生成 iOS 原生代码文件，支持：
+## 目录
 
-- 按配置选择生成 **Objective-C** 或 **C++**
-- 输出到指定目录
-- 允许配置词库，自动组合生成：
-  - 类名
-  - 方法名
-- 支持配置：
-  - 生成类个数
-  - 总输出行数范围
-  - 每类方法数量范围
-  - 每类属性数量范围
-- 支持增量生成
-- 使用状态文件记录已使用命名，避免重复
-- 生成结果可放入 Unity 工程的 `Assets/Plugins/iOS/` 或其子目录中，供 Unity iOS Plugin 集成
+- [项目简介](#项目简介)
+- [快速开始](#快速开始)
+- [功能特性](#功能特性)
+- [配置文件说明](#配置文件说明)
+- [命令行参数](#命令行参数)
+- [词库说明](#词库说明)
+- [输出统计](#输出统计)
+- [项目结构](#项目结构)
+- [使用示例](#使用示例)
+- [性能优化](#性能优化)
+- [工具](#工具)
 
 ---
 
-## 2. 适用范围
+## 项目简介
 
-### 2.1 适用场景
-本工具用于以下合规用途：
+### 项目名称
+**iOS Plugin Code Generator** - iOS 插件代码生成器
 
-- 测试工程中的原生代码样板生成
-- Unity iOS Plugin 测试接入
-- 原生层接口演示代码生成
-- 批量生成可编译的示例类
+### 主要功能
+批量生成 iOS 原生代码文件，用于合规测试场景下的原生代码样板生成，支持：
 
-### 2.2 非目标范围
-本工具不涉及：
+- **多语言支持**：Objective-C (`.h/.m`) 和 C++ (`.hpp/.cpp`)
+- **词库驱动命名**：自动组合生成类名、方法名、属性名
+- **行数控制**：精确控制总输出行数和单类行数
+- **增量生成**：支持多次执行，避免命名重复
+- **自动统计**：生成后自动显示代码行数统计报告
 
-- 绕过平台审核
-- 规避合规检测
-- 生成伪装业务逻辑的代码
+### 技术特点
 
----
-
-## 3. 总体技术选型
-
-## 3.1 选型结论
-采用 **Python 3** 作为主实现语言。
-
-## 3.2 选型原因
-
-### Python 的优势
-- 适合文本模板生成
-- JSON 支持原生且稳定
-- 文件与目录操作方便
-- 开发速度快
-- 易于维护命名状态
-- 易于扩展更多输出语言
-- 可在 Windows 环境运行
-- 可被 Unity Editor 通过外部进程调用
-
-## 3.3 备选方案说明
-可选方案包括 Node.js、C#、Shell、Batch，但综合考虑开发效率、可维护性、模板能力、增量状态管理能力后，Python 最优。
+- 采用 Python 3 实现，跨平台运行
+- 配置驱动，所有参数通过 JSON 配置
+- 状态持久化，支持断点续生成
+- 模块化设计，易于扩展新语言支持
+- 适用于 Unity iOS Plugin 测试接入场景
 
 ---
 
-## 4. 功能需求
+## 快速开始
 
-## 4.1 基础功能
+### 环境要求
 
-### 4.1.1 输出语言选择
-支持两种输出语言：
+- **操作系统**：Windows / macOS / Linux
+- **Python 版本**：Python 3.6+
+- **依赖**：无第三方依赖（仅使用标准库）
 
-- `objc`
-- `cpp`
+### 安装步骤
 
-执行时仅选择其中一种进行生成。
+1. 克隆或下载项目到本地
+2. 确保 Python 3 已安装并添加到 PATH
+3. 验证 Python 版本：
+   ```bash
+   python --version
+   ```
 
-### 4.1.2 输出目录控制
-支持通过 JSON 配置指定输出目录。
+### 快速使用示例
 
-要求：
-- 若目录不存在，可自动创建
-- 若目录存在，支持增量追加生成
-- 默认不覆盖同名文件
+#### 方式一：使用批处理脚本（Windows）
 
-### 4.1.3 词库驱动命名
-允许通过配置文件定义常用词汇，并按规则自动组合生成：
-
-- 类名
-- 方法名
-- 属性名
-- 局部变量名（可选）
-
-### 4.1.4 类生成数量控制
-允许指定生成类个数。
-
-### 4.1.5 总行数范围控制
-允许配置输出文件总行数范围，例如：
-
-```json
-"totalLineRange": [800, 1200]
+```bash
+run.bat
 ```
 
-生成器需尽量保证总输出行数落在该范围内。
+#### 方式二：直接运行 Python 脚本
 
-### 4.1.6 增量生成
-支持多次执行，后续生成需避免重复使用已有类名、方法名、词汇组合。
-
-### 4.1.7 状态持久化
-通过状态文件记录：
-
-- 已使用类名
-- 已使用方法名
-- 已使用词汇组合
-- 已生成文件
-- 上次执行信息
-
----
-
-## 4.2 命名规则
-
-### 4.2.1 类名规则
-- 使用 PascalCase
-- 可以带统一前缀
-- 结尾必须为名词
-- 不允许重复
-
-示例：
-- `ABDataCacheManager`
-- `ABPixelSignalStore`
-
-### 4.2.2 方法名规则
-- 使用 camelCase
-- 必须以动词开头
-- 不允许重复
-
-示例：
-- `loadCacheIfNeeded`
-- `updateSignalWithOptions`
-
-### 4.2.3 属性名规则
-- 使用 camelCase
-- 推荐使用名词或形容词+名词
-- 不要求全局唯一，但类内不能重复
-
----
-
-## 4.3 输出文件规则
-
-### 4.3.1 Objective-C 模式
-每个类输出：
-
-- `ClassName.h`
-- `ClassName.m`
-
-### 4.3.2 C++ 模式
-每个类输出：
-
-- `ClassName.hpp`
-- `ClassName.cpp`
-
-### 4.3.3 文件内容要求
-生成文件需满足：
-
-- 基本语法正确
-- 可编译
-- 引用关系完整
-- 包含合理的方法声明与实现
-- 行数可控
-
----
-
-## 4.4 Unity 接入要求
-
-### 4.4.1 目录兼容性
-输出目录需支持 Unity iOS 原生插件目录结构，例如：
-
-```txt
-Assets/Plugins/iOS/Generated/
+```bash
+python main.py --config ./config/generator.json
 ```
 
-### 4.4.2 文件兼容性
-生成文件扩展名符合 Unity 导出 Xcode 工程时的识别方式：
+#### 方式三：使用命令行参数覆盖配置
 
-- `.h`
-- `.m`
-- `.hpp`
-- `.cpp`
-
-### 4.4.3 后续可扩展方向
-后续可增加：
-- `.mm` Objective-C++ 桥接层
-- `extern "C"` 导出函数包装
-- Unity C# 调用桥接代码生成
-
----
-
-## 5. 非功能需求
-
-## 5.1 运行环境
-- 操作系统：Windows
-- 运行方式：
-  - Python 命令行
-  - 可选 batch 启动
-  - 可选 Unity Editor 间接调用
-
-## 5.2 可维护性
-- 模块化结构清晰
-- 模板与逻辑分离
-- 配置与状态分离
-
-## 5.3 可扩展性
-未来应易于扩展：
-- 更多目标语言
-- 更多代码模板
-- 更复杂的方法体
-- Unity Editor GUI
-
-## 5.4 稳定性
-- 错误配置有清晰提示
-- 名称冲突时有回退策略
-- 状态文件损坏时有恢复机制
-
----
-
-## 6. 系统架构设计
-
-## 6.1 总体架构
-
-```txt
-+-------------------+
-|   CLI / Batch     |
-+---------+---------+
-          |
-          v
-+-------------------+
-|     main.py       |
-+---------+---------+
-          |
-          v
-+-------------------+
-|  Config Loader    |
-+---------+---------+
-          |
-          v
-+-------------------+
-|   State Store     |
-+---------+---------+
-          |
-          v
-+-------------------+
-|   Name Builder    |
-+---------+---------+
-          |
-          v
-+-------------------+
-| Language Generator|
-|  - ObjC Generator |
-|  - Cpp Generator  |
-+---------+---------+
-          |
-          v
-+-------------------+
-|   File Writer     |
-+-------------------+
+```bash
+python main.py --config ./config/generator.json --language cpp --output ./output/cpp_test
 ```
 
 ---
 
-## 6.2 模块划分
+## 功能特性
 
-### 6.2.1 `main.py`
-职责：
-- 读取命令行参数
-- 加载配置
-- 初始化状态
-- 调用目标语言生成器
-- 汇总输出结果
+### 1. 多语言支持（ObjC/C++）
 
-### 6.2.2 `config_loader.py`
-职责：
-- 读取 JSON 配置
-- 校验字段完整性
-- 提供默认值
-- 将配置转换为内部对象
+通过配置 `language` 参数选择生成语言：
 
-### 6.2.3 `state_store.py`
-职责：
-- 加载状态文件
-- 维护已使用类名/方法名/组合
-- 保存状态
+| 语言 | 配置值 | 文件扩展名 |
+|------|--------|-----------|
+| Objective-C | `objc` | `.h` / `.m` |
+| C++ | `cpp` | `.hpp` / `.cpp` |
 
-### 6.2.4 `name_builder.py`
-职责：
-- 根据词库生成类名
-- 根据词库生成方法名
-- 确保规则正确
-- 确保全局不重复
-
-### 6.2.5 `objc_generator.py`
-职责：
-- 生成 Objective-C 头文件和实现文件
-- 控制方法、属性、注释、行数分布
-
-### 6.2.6 `cpp_generator.py`
-职责：
-- 生成 C++ 头文件和实现文件
-- 控制方法、属性、命名空间、行数分布
-
-### 6.2.7 `line_budget.py`
-职责：
-- 根据总行数范围分配各类行数预算
-- 控制每个文件的输出规模
-
-### 6.2.8 `file_writer.py`
-职责：
-- 输出文件
-- 创建目录
-- 检查覆盖策略
-- 输出写入报告
-
----
-
-## 7. 项目目录结构
-
-```txt
-codegen_tool/
-├─ main.py
-├─ run.bat
-├─ config/
-│  ├─ generator.json
-│  ├─ vocabulary.json
-│  └─ state.json
-├─ core/
-│  ├─ config_loader.py
-│  ├─ state_store.py
-│  ├─ name_builder.py
-│  ├─ line_budget.py
-│  ├─ file_writer.py
-│  ├─ objc_generator.py
-│  └─ cpp_generator.py
-├─ models/
-│  ├─ config_models.py
-│  └─ code_models.py
-├─ templates/
-│  ├─ objc_header.tpl
-│  ├─ objc_impl.tpl
-│  ├─ cpp_header.tpl
-│  └─ cpp_impl.tpl
-└─ output/
-```
-
----
-
-## 8. 配置设计
-
-## 8.1 主配置 `generator.json`
-
-```json
-{
-  "language": "objc",
-  "outputDir": "D:/UnityProject/Assets/Plugins/iOS/Generated",
-  "classCount": 6,
-  "totalLineRange": [500, 900],
-  "linesPerClassRange": [60, 180],
-  "methodsPerClassRange": [4, 8],
-  "propertiesPerClassRange": [2, 5],
-  "classPrefix": "AB",
-  "incremental": true,
-  "overwrite": false,
-  "randomSeed": 12345,
-  "stateFile": "./config/state.json",
-  "vocabularyFile": "./config/vocabulary.json"
-}
-```
-
-### 字段说明
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| language | string | 是 | `objc` 或 `cpp` |
-| outputDir | string | 是 | 输出目录 |
-| classCount | int | 是 | 生成类个数 |
-| totalLineRange | int[2] | 是 | 总输出行数范围 |
-| linesPerClassRange | int[2] | 是 | 单类行数范围 |
-| methodsPerClassRange | int[2] | 是 | 每类方法数量范围 |
-| propertiesPerClassRange | int[2] | 是 | 每类属性数量范围 |
-| classPrefix | string | 否 | 类名前缀 |
-| incremental | bool | 否 | 是否增量生成 |
-| overwrite | bool | 否 | 是否允许覆盖文件 |
-| randomSeed | int | 否 | 随机种子，便于复现 |
-| stateFile | string | 是 | 状态文件路径 |
-| vocabularyFile | string | 是 | 词库文件路径 |
-
----
-
-## 8.2 词库配置 `vocabulary.json`
-
-```json
-{
-  "class": {
-    "prefix": ["Data", "Core", "Rapid", "Safe", "Smart"],
-    "middle": ["Cache", "Signal", "Pixel", "Vector", "Buffer"],
-    "suffixNoun": ["Manager", "Handler", "Store", "Service", "Builder"]
-  },
-  "method": {
-    "verb": ["load", "fetch", "build", "update", "merge", "reset"],
-    "object": ["Cache", "Signal", "Config", "Buffer", "Record", "Value"],
-    "suffix": ["IfNeeded", "WithOptions", "Safely", "ForIndex", "InRange"]
-  },
-  "property": {
-    "adjective": ["current", "active", "cached", "local", "shared"],
-    "noun": ["Value", "Config", "Index", "Buffer", "State", "Count"]
-  }
-}
-```
-
----
-
-## 8.3 状态文件 `state.json`
-
-```json
-{
-  "usedClassNames": [],
-  "usedMethodNames": [],
-  "usedWordCombos": [],
-  "generatedFiles": [],
-  "history": []
-}
-```
-
-### 字段说明
-- `usedClassNames`：已使用类名
-- `usedMethodNames`：已使用方法名
-- `usedWordCombos`：已使用词汇组合
-- `generatedFiles`：已输出文件
-- `history`：执行历史
-
----
-
-## 9. 生成规则设计
-
-## 9.1 类名生成规则
-类名组成：
-
-```txt
-[classPrefix] + class.prefix + class.middle + class.suffixNoun
-```
-
-示例：
-
-```txt
-AB + Rapid + Buffer + Manager
-= ABRapidBufferManager
-```
-
-### 约束
-- PascalCase
-- suffix 必须来自 `suffixNoun`
-- 全局唯一
-- 若冲突则重试组合
-
----
-
-## 9.2 方法名生成规则
-方法名组成：
-
-```txt
-method.verb + method.object + method.suffix
-```
-
-示例：
-
-```txt
-build + Cache + IfNeeded
-= buildCacheIfNeeded
-```
-
-### 约束
-- camelCase
-- 必须动词开头
-- 全局唯一
-- 若冲突则重试组合
-
----
-
-## 9.3 属性名生成规则
-属性名组成：
-
-```txt
-property.adjective + property.noun
-```
-
-示例：
-
-```txt
-cached + Buffer
-= cachedBuffer
-```
-
-### 约束
-- camelCase
-- 类内唯一
-
----
-
-## 10. 行数控制设计
-
-## 10.1 控制目标
-需要使本次生成的输出总行数落在配置区间内。
-
-## 10.2 控制策略
-采用两层控制：
-
-### 第一层：类级预算
-依据：
-- `classCount`
-- `linesPerClassRange`
-- `totalLineRange`
-
-先为每个类分配一个目标行数。
-
-### 第二层：文件级填充
-每个类生成时，根据预算自动调节：
-- 属性数量
-- 方法数量
-- 方法体复杂度
-- 注释数量
-- 空行数量（可少量使用）
-
----
-
-## 10.3 方法体复杂度分级
-
-### Level 1：简单方法
-- 1~3 行逻辑
-- 适合 getter / reset / assign
-
-### Level 2：中等方法
-- 4~8 行逻辑
-- 包含条件判断、局部变量
-
-### Level 3：复杂方法
-- 8~15 行逻辑
-- 包含循环、分支、聚合计算
-
-生成器可随机组合不同复杂度方法，以控制总行数。
-
----
-
-## 11. Objective-C 代码生成设计
-
-## 11.1 文件结构
-
-### 头文件 `.h`
-内容包括：
-- `#import <Foundation/Foundation.h>`
-- 接口声明
-- 属性声明
-- 方法声明
-
-### 实现文件 `.m`
-内容包括：
-- `#import "ClassName.h"`
-- `@implementation`
-- 属性初始化
-- 方法实现
-
----
-
-## 11.2 示例结构
-
+**Objective-C 示例输出：**
 ```objc
+// ABDataCacheManager.h
 #import <Foundation/Foundation.h>
 
 @interface ABDataCacheManager : NSObject
@@ -583,31 +108,9 @@ cached + Buffer
 @end
 ```
 
----
-
-## 12. C++ 代码生成设计
-
-## 12.1 文件结构
-
-### 头文件 `.hpp`
-内容包括：
-- `#pragma once`
-- `#include <string>`
-- `#include <vector>`
-- 类声明
-- 成员变量
-- 成员函数声明
-
-### 实现文件 `.cpp`
-内容包括：
-- `#include "ClassName.hpp"`
-- 方法实现
-
----
-
-## 12.2 示例结构
-
+**C++ 示例输出：**
 ```cpp
+// ABDataCacheManager.hpp
 #pragma once
 
 #include <string>
@@ -616,6 +119,8 @@ cached + Buffer
 class ABDataCacheManager {
 public:
     ABDataCacheManager();
+    ~ABDataCacheManager();
+    
     void loadCacheIfNeeded();
     int buildSignalForIndex(int index);
 
@@ -625,265 +130,492 @@ private:
 };
 ```
 
----
+### 2. 词库驱动命名
 
-## 13. 增量生成设计
+所有命名均从词库中组合生成，确保：
 
-## 13.1 核心目标
-避免以下内容重复：
-- 类名
-- 方法名
-- 词汇组合
-- 文件名
+- 类名：PascalCase，格式为 `[前缀]+[修饰词]+[中间词]+[名词后缀]`
+- 方法名：camelCase，格式为 `[动词]+[对象]+[后缀]`
+- 属性名：camelCase，格式为 `[形容词]+[名词]`
 
-## 13.2 实现机制
-每次生成前：
-1. 读取 `state.json`
-2. 导入所有历史使用记录
-3. 生成新命名时检查冲突
-4. 输出成功后更新状态文件
+### 3. 行数控制
 
-## 13.3 冲突处理
-若重试达到阈值仍冲突，则：
-- 增加随机数字后缀，或
-- 切换备用词汇组合
+支持多层级行数控制：
 
-建议默认先重试组合，避免使用数字后缀。
+| 配置项 | 说明 | 示例 |
+|--------|------|------|
+| `totalLineRange` | 总输出行数范围 | `[400, 1200]` |
+| `linesPerClassRange` | 单类行数范围 | `[60, 180]` |
+| `methodsPerClassRange` | 每类方法数量范围 | `[4, 15]` |
+| `propertiesPerClassRange` | 每类属性数量范围 | `[2, 5]` |
 
----
+### 4. 增量生成
 
-## 14. 错误处理设计
+- 通过状态文件记录已使用的命名
+- 后续生成自动跳过已使用的类名、方法名
+- 支持多次执行累积生成大量文件
+- 状态文件损坏时自动备份并重建
 
-## 14.1 配置错误
-场景：
-- JSON 格式错误
-- 缺少必填字段
-- range 配置非法
+### 5. 自动统计报告
 
-处理：
-- 直接报错并退出
-- 输出明确错误位置
+生成完成后自动显示：
 
-## 14.2 词库不足
-场景：
-- 可用组合数量不足
-- 无法满足唯一命名
-
-处理：
-- 提示扩充词库
-- 输出当前可用组合上限
-
-## 14.3 文件冲突
-场景：
-- 输出文件已存在
-- overwrite=false
-
-处理：
-- 跳过或报错
-- 在日志中记录
-
-## 14.4 状态文件损坏
-处理：
-- 自动备份损坏文件
-- 重建空状态
-- 输出警告信息
+- 总文件数及按扩展名分类统计
+- 总行数、代码行数、空行数、注释行数
+- Top 10 最大文件列表
+- 按扩展名汇总的详细统计
 
 ---
 
-## 15. 日志与输出设计
+## 配置文件说明
 
-## 15.1 控制台日志
-输出内容包括：
-- 当前语言模式
-- 输出目录
-- 配置摘要
-- 生成类名
-- 文件写入结果
-- 总行数统计
-- 状态更新结果
+### `generator.json` 配置项详解
 
-## 15.2 执行结果摘要
-建议输出：
-
-```txt
-Language: objc
-OutputDir: D:/UnityProject/Assets/Plugins/iOS/Generated
-GeneratedClasses: 6
-GeneratedFiles: 12
-TotalLines: 842
-StateUpdated: true
+```json
+{
+  "language": "objc",
+  "outputDir": "./output",
+  "classCount": 6,
+  "totalLineRange": [400, 1200],
+  "linesPerClassRange": [60, 180],
+  "methodsPerClassRange": [4, 15],
+  "propertiesPerClassRange": [2, 5],
+  "classPrefix": "AB",
+  "incremental": true,
+  "overwrite": false,
+  "randomSeed": 12345,
+  "stateFile": "./config/state.json",
+  "vocabularyFile": "./config/vocabulary.json",
+  "showStats": true
+}
 ```
 
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `language` | string | 是 | - | 生成语言：`objc` 或 `cpp` |
+| `outputDir` | string | 是 | - | 输出目录路径 |
+| `classCount` | int | 是 | - | 生成类的数量 |
+| `totalLineRange` | int[] | 是 | - | 总输出行数范围 [min, max] |
+| `linesPerClassRange` | int[] | 是 | - | 单类行数范围 [min, max] |
+| `methodsPerClassRange` | int[] | 是 | - | 每类方法数量范围 [min, max] |
+| `propertiesPerClassRange` | int[] | 是 | - | 每类属性数量范围 [min, max] |
+| `classPrefix` | string | 否 | `""` | 类名前缀（如 `AB`） |
+| `incremental` | bool | 否 | `true` | 是否增量生成 |
+| `overwrite` | bool | 否 | `false` | 是否覆盖已存在文件 |
+| `randomSeed` | int | 否 | `12345` | 随机种子，用于复现结果 |
+| `stateFile` | string | 是 | - | 状态文件路径 |
+| `vocabularyFile` | string | 是 | - | 词库文件路径 |
+| `showStats` | bool | 否 | `true` | 是否显示统计报告 |
+
+### `vocabulary.json` 词库结构
+
+```json
+{
+  "class": {
+    "prefix": ["Data", "Core", "Rapid", "Safe", ...],
+    "middle": ["Cache", "Signal", "Pixel", "Vector", ...],
+    "suffixNoun": ["Manager", "Handler", "Store", "Service", ...]
+  },
+  "method": {
+    "verb": ["load", "fetch", "build", "update", ...],
+    "object": ["Cache", "Signal", "Config", "Buffer", ...],
+    "suffix": ["IfNeeded", "WithOptions", "Safely", ...]
+  },
+  "property": {
+    "adjective": ["current", "active", "cached", "local", ...],
+    "noun": ["Value", "Config", "Index", "Buffer", ...]
+  }
+}
+```
+
+### `state.json` 状态文件说明
+
+```json
+{
+  "usedClassNames": ["ABAboveAlertSector", "ABAboveBarrierMicrophone", ...],
+  "usedMethodNames": ["loadCacheIfNeeded", "buildSignalWithOptions", ...],
+  "usedWordCombos": [],
+  "generatedFiles": ["/path/to/file1.h", "/path/to/file1.m", ...],
+  "history": [
+    {
+      "language": "objc",
+      "generated_classes": ["ABClass1", "ABClass2"],
+      "total_lines": 842,
+      "files_written": 12,
+      "files_skipped": 0
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `usedClassNames` | string[] | 已使用的类名列表 |
+| `usedMethodNames` | string[] | 已使用的方法名列表 |
+| `usedWordCombos` | string[] | 已使用的词汇组合 |
+| `generatedFiles` | string[] | 已生成的文件路径列表 |
+| `history` | object[] | 执行历史记录 |
+
 ---
 
-## 16. 命令行设计
+## 命令行参数
 
-## 16.1 基本命令
+### 所有可用参数及说明
+
+| 参数 | 简写 | 说明 | 示例 |
+|------|------|------|------|
+| `--config` | - | 配置文件路径 | `--config ./config/generator.json` |
+| `--language` | - | 覆盖配置中的语言选项 | `--language cpp` |
+| `--seed` | - | 覆盖随机种子 | `--seed 999` |
+| `--output` | - | 覆盖输出目录 | `--output D:/Generated/` |
+| `--help` | `-h` | 显示帮助信息 | `--help` |
+
+### 使用示例
+
+#### 基本使用
 ```bash
 python main.py --config ./config/generator.json
 ```
 
-## 16.2 可选参数
+#### 指定语言
 ```bash
-python main.py --config ./config/generator.json --language objc
-python main.py --config ./config/generator.json --seed 999
-python main.py --config ./config/generator.json --output D:/xxx/Generated
+python main.py --config ./config/generator.json --language cpp
 ```
 
-### 参数说明
+#### 指定随机种子（用于复现）
+```bash
+python main.py --config ./config/generator.json --seed 42
+```
 
-| 参数 | 说明 |
-|---|---|
-| --config | 主配置文件路径 |
-| --language | 覆盖配置中的语言 |
-| --seed | 覆盖随机种子 |
-| --output | 覆盖输出目录 |
+#### 指定输出目录
+```bash
+python main.py --config ./config/generator.json --output ./output/custom
+```
 
----
-
-## 17. Batch 启动脚本设计
-
-示例 `run.bat`：
-
-```bat
-@echo off
-python main.py --config .\config\generator.json
-pause
+#### 组合使用
+```bash
+python main.py --config ./config/generator.json --language cpp --seed 42 --output ./output/cpp_test
 ```
 
 ---
 
-## 18. Unity 集成建议
+## 词库说明
 
-## 18.1 推荐方式
-通过 Unity Editor C# 菜单调用 Python 生成器：
+### 词库结构
 
-1. Unity 菜单项触发
-2. 调用外部 Python 脚本
-3. 生成文件到 `Assets/Plugins/iOS/Generated/`
-4. 执行 `AssetDatabase.Refresh()`
+词库分为三大类，每类包含多个子类别：
 
-## 18.2 典型流程
-```txt
-Unity Editor Menu
-   -> Run Python Generator
-   -> Write iOS Native Files
-   -> Refresh Assets
-   -> Build iOS
+#### 1. 类名词库 (`class`)
+- **prefix**：前缀修饰词（如 `Data`, `Core`, `Rapid`）
+- **middle**：中间词（如 `Cache`, `Signal`, `Vector`）
+- **suffixNoun**：名词后缀（如 `Manager`, `Handler`, `Service`）
+
+#### 2. 方法词库 (`method`)
+- **verb**：动词（如 `load`, `fetch`, `build`）
+- **object**：对象名词（如 `Cache`, `Signal`, `Config`）
+- **suffix**：方法后缀（如 `IfNeeded`, `WithOptions`）
+
+#### 3. 属性词库 (`property`)
+- **adjective**：形容词（如 `current`, `active`, `cached`）
+- **noun**：名词（如 `Value`, `Config`, `Index`）
+
+### 当前词库规模
+
+当前默认词库 [`config/vocabulary.json`](config/vocabulary.json) 包含：
+
+| 类别 | 子类别 | 词汇数量 |
+|------|--------|----------|
+| 类名 | prefix | 350+ |
+| 类名 | middle | 250+ |
+| 类名 | suffixNoun | 250+ |
+| 方法 | verb | 200+ |
+| 方法 | object | 200+ |
+| 方法 | suffix | 100+ |
+| 属性 | adjective | 200+ |
+| 属性 | noun | 200+ |
+| **总计** | - | **约 2370 个词汇** |
+
+### 命名组合潜力
+
+基于当前词库规模，理论命名组合数量：
+
+- **类名组合**：350 × 250 × 250 ≈ **21,875,000 种**
+- **方法名组合**：200 × 200 × 100 = **4,000,000 种**
+- **属性名组合**：200 × 200 = **40,000 种**
+
+**总计超过 3500 万种可能的命名组合**，足以支持大规模代码生成需求。
+
+---
+
+## 输出统计
+
+### 自动显示行数统计
+
+生成完成后，工具会自动调用 [`tools/line_counter.py`](tools/line_counter.py) 显示统计报告。
+
+### 统计内容说明
+
+统计报告包含以下内容：
+
+1. **文件统计**
+   - 总文件数
+   - 按扩展名分类统计（`.h`, `.m`, `.hpp`, `.cpp`）
+
+2. **行数统计**
+   - 总行数
+   - 代码行数（非空非注释）
+   - 空行数
+   - 注释行数
+
+3. **Top 10 最大文件**
+   - 按行数排序的前 10 个文件
+
+4. **按扩展名汇总**
+   - 每种文件类型的详细统计
+
+### 统计报告示例
+
+```
+========================================
+代码行数统计报告
+========================================
+目标目录：./output
+
+文件统计:
+  总文件数：12
+  .h 文件：6
+  .m 文件：6
+
+行数统计:
+  总行数：842
+  代码行数：650
+  空行数：120
+  注释行数：72
+
+Top 10 最大文件:
+  1. ABDataCacheManager.m - 95 行
+  2. ABSignalHandler.m - 88 行
+  3. ABVectorBuilder.m - 82 行
+  ...
+
+按扩展名汇总:
+  .h:
+    文件数：6
+    总行数：320
+    代码行数：280
+    空行数：25
+    注释行数：15
+  .m:
+    文件数：6
+    总行数：522
+    代码行数：370
+    空行数：95
+    注释行数：57
+
+========================================
 ```
 
 ---
 
-## 19. 开发阶段规划
+## 项目结构
 
-## 19.1 V1 最小可用版本
-包含：
-- JSON 配置读取
-- Objective-C 生成
-- C++ 生成
-- 命名去重
-- 状态文件
-- 行数控制基础能力
+### 目录结构
 
-## 19.2 V2 增强版本
-包含：
-- 模板可配置
-- 方法体复杂度增强
-- 批量配置执行
-- Unity Editor 菜单调用
+```
+IOSPluginCodeGenerator/
+├── main.py                 # 主入口文件
+├── run.bat                 # Windows 批处理启动脚本
+├── ReadMe.md               # 项目文档
+├── config/                 # 配置文件目录
+│   ├── generator.json      # 主配置文件
+│   ├── vocabulary.json     # 词库配置文件
+│   └── state.json          # 状态文件（自动生成）
+├── core/                   # 核心模块目录
+│   ├── __init__.py
+│   ├── config_loader.py    # 配置加载器
+│   ├── state_store.py      # 状态存储器
+│   ├── name_builder.py     # 命名构建器
+│   ├── line_budget.py      # 行数预算分配器
+│   ├── file_writer.py      # 文件写入器
+│   ├── objc_generator.py   # Objective-C 生成器
+│   └── cpp_generator.py    # C++ 生成器
+└── tools/                  # 工具脚本目录
+    └── line_counter.py     # 代码行数统计工具
+```
 
-## 19.3 V3 扩展版本
-包含：
-- `.mm` 桥接层
-- C 接口桥接导出
-- GUI 配置工具
+### 核心模块说明
 
----
-
-## 20. 测试方案
-
-## 20.1 单元测试
-测试模块：
-- 配置加载
-- 命名生成
-- 冲突处理
-- 状态读写
-- 行数预算
-
-## 20.2 集成测试
-测试场景：
-- 生成 Objective-C 类
-- 生成 C++ 类
-- 增量生成
-- 重复执行
-- 输出到 Unity 工程目录
-
-## 20.3 人工验证
-验证项：
-- 文件结构是否正确
-- 命名是否符合规则
-- 代码是否可编译
-- 行数是否落在范围内
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| 主入口 | [`main.py`](main.py) | 流程编排：加载配置 → 初始化状态 → 生成命名 → 生成代码 → 写入文件 |
+| 配置加载器 | [`core/config_loader.py`](core/config_loader.py) | 读取 JSON 配置、校验字段、提供默认值 |
+| 状态存储器 | [`core/state_store.py`](core/state_store.py) | 加载/保存状态文件，记录已使用命名和已生成文件 |
+| 命名构建器 | [`core/name_builder.py`](core/name_builder.py) | 根据词库生成类名、方法名、属性名，确保唯一性 |
+| 行数预算 | [`core/line_budget.py`](core/line_budget.py) | 分配行数预算，控制方法复杂度 |
+| 文件写入器 | [`core/file_writer.py`](core/file_writer.py) | 输出文件到磁盘，处理目录创建和覆盖策略 |
+| ObjC 生成器 | [`core/objc_generator.py`](core/objc_generator.py) | 生成 Objective-C 头文件和实现文件 |
+| C++ 生成器 | [`core/cpp_generator.py`](core/cpp_generator.py) | 生成 C++ 头文件和实现文件 |
+| 行数统计 | [`tools/line_counter.py`](tools/line_counter.py) | 统计代码行数，生成统计报告 |
 
 ---
 
-## 21. 风险与应对
+## 使用示例
 
-## 21.1 风险：词库组合不足
-应对：
-- 提前计算组合上限
-- 配置校验时提示风险
+### 基本使用
 
-## 21.2 风险：总行数难以精准命中
-应对：
-- 允许范围控制而非精确值
-- 使用注释/空行/辅助方法微调
+生成 6 个 Objective-C 类：
 
-## 21.3 风险：Unity 工程路径差异
-应对：
-- 目录完全配置化
-- 提供命令行覆盖能力
+```bash
+python main.py --config ./config/generator.json
+```
 
-## 21.4 风险：状态文件长期膨胀
-应对：
-- 状态分层
-- 支持归档与清理
+### C++ 生成示例
+
+生成 C++ 代码：
+
+```bash
+python main.py --config ./config/generator.json --language cpp
+```
+
+或使用预配置的 C++ 配置文件：
+
+```bash
+python main.py --config ./config/generator_test5.json
+```
+
+### 大规模生成示例
+
+生成 100 万个类（需要充足磁盘空间）：
+
+```bash
+python main.py --config ./config/generator_1m.json
+```
+
+**注意**：大规模生成时建议：
+1. 确保有足够的磁盘空间
+2. 使用 SSD 硬盘以提高写入速度
+3. 考虑分批生成，避免单次生成过多文件
+
+### 增量生成示例
+
+第一次生成：
+
+```bash
+python main.py --config ./config/generator.json
+```
+
+第二次生成（自动跳过已使用的命名）：
+
+```bash
+python main.py --config ./config/generator.json
+```
+
+两次生成的类名和方法名不会重复。
+
+### 自定义输出目录
+
+```bash
+python main.py --config ./config/generator.json --output D:/UnityProject/Assets/Plugins/iOS/Generated
+```
+
+### 固定随机种子（用于复现）
+
+```bash
+python main.py --config ./config/generator.json --seed 42
+```
 
 ---
 
-## 22. 最终推荐实施方案
+## 性能优化
 
-### 技术栈
-- 语言：Python 3
-- 配置：JSON
-- 状态：JSON
-- 启动：CLI + Batch
-- 可选集成：Unity Editor C# 调用
+### 性能优化说明（O(n²)→O(n)）
 
-### 原则
-- 配置驱动
-- 模板生成
-- 命名唯一
-- 增量可追踪
-- 输出可直接落地到 Unity iOS Plugin 目录
+状态存储模块 [`core/state_store.py`](core/state_store.py) 进行了性能优化：
+
+**优化前**：使用 list 存储已使用命名，每次检查需要 O(n) 时间复杂度
+
+**优化后**：使用 set 进行 O(1) 查找，保存时转换为 list 保持 JSON 兼容性
+
+```python
+# 内部使用 set 进行 O(1) 查找
+self._usedClassNames: Set[str] = set()
+self._usedMethodNames: Set[str] = set()
+
+# 保存时转换为 list 保持 JSON 兼容性
+self.state["usedClassNames"] = list(self._usedClassNames)
+```
+
+### 大规模生成建议
+
+1. **使用 SSD 硬盘**：文件写入速度更快
+2. **分批生成**：避免单次生成过多文件导致内存占用过高
+3. **关闭统计报告**：设置 `"showStats": false` 可略微提升性能
+4. **增加随机种子**：使用不同的 `randomSeed` 值生成不同批次
+5. **监控状态文件大小**：长期增量生成后，状态文件可能变大，可定期归档
+
+---
+
+## 工具
+
+### `tools/line_counter.py` 使用说明
+
+独立的代码行数统计工具，可单独使用。
+
+#### 基本用法
+
+```bash
+python tools/line_counter.py ./output
+```
+
+#### 命令行参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `target_dir` | 目标文件夹路径（必填） | - |
+| `--extensions` | 要统计的文件扩展名，逗号分隔 | `.h,.m,.hpp,.cpp` |
+| `--output` | 输出格式：`text` 或 `json` | `text` |
+| `--exclude` | 排除的文件夹模式，逗号分隔 | - |
+
+#### 使用示例
+
+统计指定目录：
+```bash
+python tools/line_counter.py ./output
+```
+
+指定扩展名：
+```bash
+python tools/line_counter.py ./src --extensions .h,.m,.cpp
+```
+
+输出 JSON 格式：
+```bash
+python tools/line_counter.py ./output --output json
+```
+
+排除特定文件夹：
+```bash
+python tools/line_counter.py ./output --exclude build,dist,node_modules
+```
 
 ---
 
-## 23. 下一步实施内容
+## 常见问题
 
-下一步进入代码实现阶段时，建议直接输出以下内容：
+### Q: 如何重置生成状态？
+A: 删除或清空 `config/state.json` 文件即可重新开始生成。
 
-1. `main.py`
-2. `config/generator.json`
-3. `config/vocabulary.json`
-4. `config/state.json`
-5. `core/config_loader.py`
-6. `core/state_store.py`
-7. `core/name_builder.py`
-8. `core/line_budget.py`
-9. `core/file_writer.py`
-10. `core/objc_generator.py`
-11. `core/cpp_generator.py`
-12. `run.bat`
+### Q: 生成的代码可以编译吗？
+A: 是的，生成的代码满足基本语法要求，可以直接编译。但仅作为测试样板代码，不包含实际业务逻辑。
+
+### Q: 如何扩展词库？
+A: 编辑 `config/vocabulary.json` 文件，在对应类别的数组中添加新词汇即可。
+
+### Q: 支持生成其他语言吗？
+A: 当前支持 Objective-C 和 C++。如需扩展其他语言，可参考现有生成器模块实现新的生成器类。
 
 ---
+
+## 许可证
+
+本项目仅供学习和测试使用。

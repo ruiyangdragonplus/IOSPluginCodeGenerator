@@ -1,7 +1,7 @@
 {
   "language": "objc",
-  "outputDir": "./output",
-  "classCount": 6,
+  "outputDir": "./output_test4",
+  "classCount": 3,
   "totalLineRange": [400, 1200],
   "linesPerClassRange": [60, 180],
   "methodsPerClassRange": [4, 15],
@@ -9,8 +9,7 @@
   "classPrefix": "AB",
   "incremental": true,
   "overwrite": false,
-  "randomSeed": 12345,
-  "stateFile": "./config/state.json",
-  "vocabularyFile": "./config/vocabulary.json",
-  "showStats": true
+  "randomSeed": 11111,
+  "stateFile": "./config/state_test4.json",
+  "vocabularyFile": "./config/vocabulary.json"
 }

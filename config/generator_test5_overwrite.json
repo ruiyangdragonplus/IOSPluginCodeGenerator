@@ -1,16 +1,15 @@
 {
   "language": "objc",
-  "outputDir": "./output",
-  "classCount": 6,
+  "outputDir": "./output_test5",
+  "classCount": 2,
   "totalLineRange": [400, 1200],
   "linesPerClassRange": [60, 180],
   "methodsPerClassRange": [4, 15],
   "propertiesPerClassRange": [2, 5],
   "classPrefix": "AB",
   "incremental": true,
-  "overwrite": false,
-  "randomSeed": 12345,
-  "stateFile": "./config/state.json",
-  "vocabularyFile": "./config/vocabulary.json",
-  "showStats": true
+  "overwrite": true,
+  "randomSeed": 77777,
+  "stateFile": "./config/state_test5_overwrite.json",
+  "vocabularyFile": "./config/vocabulary.json"
 }

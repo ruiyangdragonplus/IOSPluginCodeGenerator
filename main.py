@@ -16,6 +16,7 @@ from core.line_budget import LineBudget
 from core.file_writer import FileWriter
 from core.objc_generator import ObjCGenerator
 from core.cpp_generator import CppGenerator
+from tools.line_counter import LineCounter, ReportGenerator
 
 
 def parse_args() -> argparse.Namespace:
@@ -260,6 +261,35 @@ def main() -> int:
     
     # 打印文件列表
     file_writer.print_summary()
+    
+    # 显示行数统计报告
+    show_stats = config.get("showStats", True)
+    if show_stats:
+        print(f"\n{'=' * 60}")
+        print("代码生成完成 - 统计报告")
+        print(f"{'=' * 60}")
+        
+        try:
+            # 创建行数统计器
+            counter = LineCounter(
+                extensions=[".h", ".m", ".hpp", ".cpp"],
+                exclude_patterns=[]
+            )
+            
+            # 扫描输出目录
+            from pathlib import Path
+            target_dir = Path(config["outputDir"])
+            counter.scan_directory(target_dir)
+            
+            # 计算汇总
+            counter.calculate_summary()
+            
+            # 生成报告
+            generator = ReportGenerator(counter, target_dir)
+            print(generator.generate_text_report())
+            
+        except Exception as e:
+            print(f"  警告：无法生成统计报告：{e}")
     
     return 0
 

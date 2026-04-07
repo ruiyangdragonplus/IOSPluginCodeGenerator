@@ -1,0 +1,10 @@
+{
+  "classCount": 8000,
+  "totalLineRange": [900000, 1100000],
+  "linesPerClassRange": [60, 900],
+  "methodsPerClassRange": [4, 20],
+  "propertiesPerClassRange": [2, 15],
+  "outputDir": "./output_1m_test",
+  "incremental": false,
+  "randomSeed": 12345
+}
