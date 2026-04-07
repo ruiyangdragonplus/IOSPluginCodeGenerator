@@ -4,19 +4,42 @@ Objective-C 代码生成器模块
 """
 
 from typing import Dict, List, Any, Optional
+from .template_engine import TemplateEngine
 
 
 class ObjCGenerator:
     """Objective-C 代码生成器类"""
     
-    def __init__(self, class_prefix: str = ""):
+    def __init__(self, class_prefix: str = "", vocabulary: Optional[Dict[str, Any]] = None,
+                 diversity_config: Optional[Dict[str, Any]] = None):
         """
         初始化 Objective-C 生成器
         
         Args:
             class_prefix: 类名前缀
+            vocabulary: 词库配置
+            diversity_config: 多样性配置
         """
         self.class_prefix = class_prefix
+        self.template_engine = TemplateEngine(vocabulary)
+        self.diversity_config = diversity_config or {
+            "diversityLevel": "high",
+            "enableAsyncMethods": True,
+            "enableBlockCallbacks": True,
+            "enableErrorHandling": True,
+            "enableGenericTypes": True,
+            "enableChainableMethods": True,
+            "enableFactoryMethods": True,
+            "enableSingletonPattern": True,
+            "enableDelegatePattern": True,
+            "enableCacheLogic": True,
+            "enableValidationLogic": True,
+            "enableLoggingLogic": True
+        }
+    
+    def set_seed(self, seed: int):
+        """设置随机种子"""
+        self.template_engine.set_seed(seed)
     
     def generate_header(
         self,
@@ -94,6 +117,14 @@ class ObjCGenerator:
         Returns:
             方法声明字符串
         """
+        # 如果方法包含模板，使用模板引擎生成签名
+        if "template" in method:
+            template = method["template"]
+            method_name = method.get("name", "")
+            return_type = method.get("return_type", "void")
+            return self.template_engine.generate_method_signature(method_name, template, return_type)
+        
+        # 否则使用传统方式生成
         method_name = method.get("name", "")
         return_type = method.get("return_type", "void")
         params = method.get("params", [])
@@ -221,7 +252,16 @@ class ObjCGenerator:
                 lines.append(f"- ({return_type}){method_sig} {{")
         
         # 根据复杂度生成方法体内容
-        body_lines = self._generate_method_body(complexity, params, return_type)
+        # 如果方法包含模板，使用模板引擎生成方法体
+        if "template" in method:
+            template = method["template"]
+            enable_code_blocks = self.diversity_config.get("diversityLevel", "high") == "high"
+            body_lines = self.template_engine.generate_method_body(
+                template, params, return_type, enable_code_blocks
+            )
+        else:
+            body_lines = self._generate_method_body(complexity, params, return_type)
+        
         for body_line in body_lines:
             lines.append(f"    {body_line}")
         
@@ -248,7 +288,7 @@ class ObjCGenerator:
     
     def _generate_method_body(self, complexity: int, params: List[Dict], return_type: str) -> List[str]:
         """
-        根据复杂度生成方法体内容
+        根据复杂度生成方法体内容（传统方式）
         
         Args:
             complexity: 复杂度等级
@@ -260,33 +300,81 @@ class ObjCGenerator:
         """
         lines = []
         
+        # 从词库中获取代码块模板
+        builtin = self.template_engine.vocabulary.get("builtin", {}) if self.template_engine.vocabulary else {}
+        code_blocks = builtin.get("codeBlock", {})
+        
         if complexity == 1:
             # 简单方法
             lines.append("// Simple implementation")
-            lines.append("NSLog(@\"%s called\", __func__);")
+            if code_blocks.get("log"):
+                lines.append(self.template_engine.random.choice(code_blocks["log"]))
+            else:
+                lines.append("NSLog(@\"%s called\", __func__);")
         
         elif complexity == 2:
             # 中等方法
             lines.append("// Medium complexity implementation")
-            lines.append("NSLog(@\"%s called\", __func__);")
+            if code_blocks.get("log"):
+                lines.append(self.template_engine.random.choice(code_blocks["log"]))
             lines.append("")
-            lines.append("if (self) {")
-            lines.append("    // Process request")
-            lines.append("}")
+            if code_blocks.get("validation"):
+                lines.append(self.template_engine.random.choice(code_blocks["validation"]))
+            else:
+                lines.append("if (self) {")
+                lines.append("    // Process request")
+                lines.append("}")
         
         elif complexity >= 3:
             # 复杂方法
             lines.append("// Complex implementation")
-            lines.append("NSLog(@\"%s called\", __func__);")
+            if code_blocks.get("log"):
+                lines.append(self.template_engine.random.choice(code_blocks["log"]))
             lines.append("")
-            lines.append("for (int i = 0; i < 10; i++) {")
-            lines.append("    // Process item")
-            lines.append("    if (i % 2 == 0) {")
-            lines.append("        NSLog(@\"Processing even index: %d\", i);")
-            lines.append("    }")
-            lines.append("}")
+            if code_blocks.get("loop"):
+                loop_block = self.template_engine.random.choice(code_blocks["loop"])
+                lines.append(loop_block.replace("{ }", "{") + "    // Process item")
+                lines.append("    if (i % 2 == 0) {")
+                if code_blocks.get("log"):
+                    lines.append("        " + self.template_engine.random.choice(code_blocks["log"]))
+                lines.append("    }")
+                lines.append("}")
         
         return lines
+    
+    def generate_method_with_template(self, class_name: str, method_index: int = 0) -> Dict[str, Any]:
+        """
+        使用模板引擎生成方法
+        
+        Args:
+            class_name: 类名
+            method_index: 方法索引
+            
+        Returns:
+            方法信息字典
+        """
+        class_type = self.template_engine.detect_class_type(class_name)
+        template = self.template_engine.select_method_template(
+            class_type, method_index, 
+            self.diversity_config.get("diversityLevel", "high")
+        )
+        
+        # 生成方法名
+        method_name = self.template_engine._generate_method_name_for_template(template, method_index)
+        
+        # 生成返回类型
+        builtin = self.template_engine.vocabulary.get("builtin", {}) if self.template_engine.vocabulary else {}
+        return_types = builtin.get("returnType", {}).get("primitive", ["void"])
+        return_type = self.template_engine.random.choice(return_types)
+        
+        return {
+            "name": method_name,
+            "return_type": return_type,
+            "template": template,
+            "class_type": class_type,
+            "complexity": template.get("complexity", 1),
+            "params": []
+        }
     
     def generate_files(
         self,

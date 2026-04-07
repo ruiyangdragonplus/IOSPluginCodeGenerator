@@ -5,6 +5,7 @@
 ## 目录
 
 - [项目简介](#项目简介)
+- [生成模式](#生成模式)
 - [快速开始](#快速开始)
 - [功能特性](#功能特性)
 - [配置文件说明](#配置文件说明)
@@ -15,6 +16,8 @@
 - [使用示例](#使用示例)
 - [性能优化](#性能优化)
 - [工具](#工具)
+- [统一入口注册表](#统一入口注册表)
+- [Unity 集成说明](#unity-集成说明)
 
 ---
 
@@ -40,6 +43,43 @@
 - 状态持久化，支持断点续生成
 - 模块化设计，易于扩展新语言支持
 - 适用于 Unity iOS Plugin 测试接入场景
+
+---
+
+## 生成模式
+
+本项目支持 **4 种生成模式**，满足不同的代码生成需求：
+
+| 模式 | 语言 | 输出内容 | 文件扩展名 | 配置方式 |
+|------|------|----------|-----------|----------|
+| **OC 代码生成** | Objective-C | 类/方法/属性 | `.h` / `.m` | `"language": "objc"` |
+| **OC String 生成** | Objective-C | String 常量 | `.m` | `"language": "string", "stringLanguage": "objc"` |
+| **C++ 代码生成** | C++ | 类/方法/成员变量 | `.hpp` / `.cpp` | `"language": "cpp"` |
+| **C++ String 生成** | C++ | `const char[]` 常量 | `.cpp` | `"language": "string", "stringLanguage": "cpp"` |
+
+### 模式特点
+
+#### 1. OC 代码生成
+- 生成完整的 Objective-C 类，包含属性、方法
+- 支持 15 种方法模板，8 类代码块
+- 支持生成 `ABPluginRegistry.m` 统一调用所有类
+
+#### 2. OC String 生成
+- 生成单个文件包含多个 String 常量
+- 支持 `word`（词汇组合）和 `sentence`（句子）两种模式
+- 自动生成 `ABPrintStringConstants()` 函数
+
+#### 3. C++ 代码生成
+- 生成完整的 C++ 类，使用纯 C++ 语法
+- 支持 21 种 C++ 方法模板，11 类 C++ 代码块
+- 支持生成 `ABPluginRegistry.cpp` 统一调用所有类
+
+#### 4. C++ String 生成
+- 生成单个文件包含多个 `const char[]` 常量
+- 支持 `word`（词汇组合）和 `sentence`（句子）两种模式
+- 自动生成 `ABPrintStringConstants()` 函数
+
+> 📖 **详细文档**: 查看 [docs/MODES.md](docs/MODES.md) 获取完整的模式说明、配置示例和使用示例。
 
 ---
 
@@ -84,20 +124,23 @@ python main.py --config ./config/generator.json --language cpp --output ./output
 
 ## 功能特性
 
-### 1. 多语言支持（ObjC/C++/String）
+### 1. 多语言支持（4 种模式）
 
-通过配置 `language` 参数选择生成语言：
+本项目支持 4 种生成模式，详细配置请参考 [docs/MODES.md](docs/MODES.md)：
 
-| 语言 | 配置值 | 文件扩展名 |
+| 模式 | 配置值 | 文件扩展名 |
 |------|--------|-----------|
-| Objective-C | `objc` | `.h` / `.m` |
-| C++ | `cpp` | `.hpp` / `.cpp` |
-| String 常量 | `string` | `.m` / `.cpp` |
+| OC 代码生成 | `"language": "objc"` | `.h` / `.m` |
+| OC String 生成 | `"language": "string", "stringLanguage": "objc"` | `.m` |
+| C++ 代码生成 | `"language": "cpp"` | `.hpp` / `.cpp` |
+| C++ String 生成 | `"language": "string", "stringLanguage": "cpp"` | `.cpp` |
 
-### 2. String 常量生成模式
+### 2. String 常量生成模式（OC/C++）
 
 **功能说明**：
-生成包含随机 String 常量的单个文件，支持 Objective-C 和 C++ 格式，适用于 Unity Plugins 中的字符串资源管理。
+生成包含随机 String 常量的单个文件，支持 Objective-C (`NSString * const`) 和 C++ (`const char[]`) 格式，适用于 Unity Plugins 中的字符串资源管理。
+
+**详细文档**: 查看 [docs/MODES.md#模式 2-oc-string-生成](docs/MODES.md#模式 2-oc-string-生成) 和 [docs/MODES.md#模式 4-c-string-生成](docs/MODES.md#模式 4-c-string-生成) 获取完整说明。
 
 **配置项**：
 ```json
@@ -118,42 +161,12 @@ python main.py --config ./config/generator.json --language cpp --output ./output
 | `stringMode` | string | `word`（词汇组合）或 `sentence`（句子模式） | word |
 | `stringLanguage` | string | 输出格式：`objc` 或 `cpp` | objc |
 
-**Objective-C 输出示例**：
-```objc
-// ABStringConstants.m
-#import <Foundation/Foundation.h>
-
-static NSString * const ABStringConstant_0 = @"Data Cache Manager";
-static NSString * const ABStringConstant_1 = @"Fast Signal Handler";
-
-void ABPrintStringConstants() {
-    if (YES) return;
-    NSLog(@"%@", ABStringConstant_0);
-    NSLog(@"%@", ABStringConstant_1);
-}
-```
-
-**C++ 输出示例**：
-```cpp
-// ABStringConstants.cpp
-#include <cstdio>
-
-static const char ABStringConstant_0[] = "Data Cache Manager";
-static const char ABStringConstant_1[] = "Fast Signal Handler";
-
-void ABPrintStringConstants() {
-    if (true) return;
-    printf("%s\n", ABStringConstant_0);
-    printf("%s\n", ABStringConstant_1);
-}
-```
-
 **使用示例**：
 ```bash
-# Objective-C 格式（词汇模式）
+# OC String 生成（词汇模式）
 python main.py --config ./config/generator_string.json
 
-# C++ 格式（词汇模式）
+# C++ String 生成（词汇模式）
 python main.py --config ./config/generator_string_cpp.json
 
 # 句子模式
@@ -256,13 +269,15 @@ private:
   "randomSeed": 12345,
   "stateFile": "./config/state.json",
   "vocabularyFile": "./config/vocabulary.json",
-  "showStats": true
+  "showStats": true,
+  "generateRegistry": true,
+  "registryLanguage": "objc"
 }
 ```
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `language` | string | 是 | - | 生成语言：`objc`、`cpp` 或 `string` |
+| `language` | string | 是 | - | 生成模式：`objc`（OC 代码）、`cpp`（C++ 代码）、`string`（String 常量） |
 | `outputDir` | string | 是 | - | 输出目录路径 |
 | `classCount` | int | 条件 | - | 生成类的数量（非 string 模式必填） |
 | `stringCount` | int | 条件 | `1000` | String 数量（string 模式） |
@@ -279,6 +294,8 @@ private:
 | `stateFile` | string | 是 | - | 状态文件路径 |
 | `vocabularyFile` | string | 是 | - | 词库文件路径 |
 | `showStats` | bool | 否 | `true` | 是否显示统计报告 |
+| `generateRegistry` | bool | 否 | `false` | 是否生成统一入口注册表文件 |
+| `registryLanguage` | string | 否 | `objc` | 注册表语言：`objc` 或 `cpp` |
 
 **String 模式配置示例：**
 ```json
@@ -556,6 +573,17 @@ IOSPluginCodeGenerator/
 
 ## 使用示例
 
+> 📖 **完整模式文档**: 查看 [docs/MODES.md](docs/MODES.md) 获取 4 种生成模式的详细说明、配置示例和完整使用流程。
+
+### 快速参考
+
+| 模式 | 配置文件示例 | 命令 |
+|------|-------------|------|
+| OC 代码生成 | `generator.json` | `python main.py --config ./config/generator.json` |
+| OC String 生成 | `generator_string.json` | `python main.py --config ./config/generator_string.json` |
+| C++ 代码生成 | `generator.json` | `python main.py --config ./config/generator.json --language cpp` |
+| C++ String 生成 | `generator_string_cpp.json` | `python main.py --config ./config/generator_string_cpp.json` |
+
 ### 基本使用
 
 生成 6 个 Objective-C 类：
@@ -715,6 +743,166 @@ python tools/line_counter.py ./output --exclude build,dist,node_modules
 
 ---
 
+## 统一入口注册表
+
+### 功能说明
+
+统一入口注册表功能允许在生成代码后自动生成一个统一的初始化和清理入口文件，方便批量管理所有生成的插件类。
+
+### 配置方式
+
+在 `generator.json` 中添加以下配置：
+
+```json
+{
+  "generateRegistry": true,      // 是否生成统一入口注册表
+  "registryLanguage": "objc"     // 注册表语言：objc 或 cpp
+}
+```
+
+### 生成的文件
+
+| 文件 | 说明 |
+|------|------|
+| `ABPluginRegistry.h` | 头文件，声明统一入口函数 |
+| `ABPluginRegistry.m` | Objective-C 实现文件（当 `registryLanguage` 为 `objc`） |
+| `ABPluginRegistry.cpp` | C++ 实现文件（当 `registryLanguage` 为 `cpp`） |
+
+### Objective-C 注册表示例
+
+```objc
+// ABPluginRegistry.m
+#import <Foundation/Foundation.h>
+#import "ABDataCacheManager.h"
+#import "ABDataVectorManager.h"
+// ... 导入所有生成的类
+
+// 统一初始化入口
+void ABInitializeAllPlugins() {
+    if (ABPluginsInitialized) return;
+    ABPluginsInitialized = YES;
+    
+    NSLog(@"[ABPlugin] Initializing all plugins...");
+    
+    // 自动实例化并调用所有生成的类
+    ABDataCacheManager *m1 = [[ABDataCacheManager alloc] init];
+    [m1 loadData];
+    
+    ABDataVectorManager *m2 = [[ABDataVectorManager alloc] init];
+    [m2 loadData];
+    
+    // ... 所有类
+    
+    NSLog(@"[ABPlugin] All plugins initialized successfully.");
+}
+
+// 统一清理入口
+void ABCleanupAllPlugins() {
+    if (!ABPluginsInitialized) return;
+    
+    NSLog(@"[ABPlugin] Cleaning up all plugins...");
+    
+    // 清理逻辑
+    ABPluginsInitialized = NO;
+    
+    NSLog(@"[ABPlugin] All plugins cleaned up successfully.");
+}
+```
+
+### C++ 注册表示例
+
+```cpp
+// ABPluginRegistry.cpp
+#include "ABDataCacheManager.h"
+#include "ABDataVectorManager.h"
+// ...
+
+extern "C" {
+    void ABInitializeAllPlugins() {
+        if (g_ABPluginsInitialized) return;
+        g_ABPluginsInitialized = true;
+        
+        std::cout << "[ABPlugin] Initializing all plugins..." << std::endl;
+        
+        // 实例化并调用所有生成的类
+        ABDataCacheManager* m1 = new ABDataCacheManager();
+        m1->loadData();
+        delete m1;
+        
+        // ... 所有类
+        
+        std::cout << "[ABPlugin] All plugins initialized successfully." << std::endl;
+    }
+    
+    void ABCleanupAllPlugins() {
+        if (!g_ABPluginsInitialized) return;
+        
+        std::cout << "[ABPlugin] Cleaning up all plugins..." << std::endl;
+        
+        // 清理逻辑
+        g_ABPluginsInitialized = false;
+        
+        std::cout << "[ABPlugin] All plugins cleaned up successfully." << std::endl;
+    }
+}
+```
+
+### 使用方式
+
+#### 在 Unity 中调用
+
+1. 将生成的 `ABPluginRegistry.h` 和 `ABPluginRegistry.m`（或 `.cpp`）文件复制到 Unity 项目的 `Assets/Plugins/iOS/` 目录
+
+2. 在 C# 代码中使用 `DllImport` 调用：
+
+```csharp
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public class ABPluginWrapper
+{
+    [DllImport("__Internal")]
+    private static extern void ABInitializeAllPlugins();
+    
+    [DllImport("__Internal")]
+    private static extern void ABCleanupAllPlugins();
+    
+    public static void InitializeAll()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        ABInitializeAllPlugins();
+        #endif
+    }
+    
+    public static void CleanupAll()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        ABCleanupAllPlugins();
+        #endif
+    }
+}
+```
+
+3. 在应用启动时调用初始化：
+
+```csharp
+void Start()
+{
+    ABPluginWrapper.InitializeAll();
+}
+
+void OnApplicationQuit()
+{
+    ABPluginWrapper.CleanupAll();
+}
+```
+
+### C# 包装类模板
+
+项目提供了完整的 C# 包装类模板，位于 [`docs/PluginWrapper.cs`](docs/PluginWrapper.cs)。
+
+---
+
 ## 常见问题
 
 ### Q: 如何重置生成状态？
@@ -728,6 +916,142 @@ A: 编辑 `config/vocabulary.json` 文件，在对应类别的数组中添加新
 
 ### Q: 支持生成其他语言吗？
 A: 当前支持 Objective-C、C++ 和 String 常量模式。如需扩展其他语言，可参考现有生成器模块实现新的生成器类。
+
+---
+
+## Unity 集成说明
+
+生成的代码可以直接用于 Unity iOS 项目。详细的集成说明请参考：
+
+**[Unity iOS 插件集成说明](docs/unity_integration.md)**
+
+### 集成内容概览
+
+| 生成模式 | 说明 | 集成文档章节 |
+|----------|------|-------------|
+| **普通模式（类/方法/属性）** | 生成完整的 Objective-C 类，包含类定义、属性、实例方法和类方法 | [第 2 章 - 普通代码生成模式](docs/unity_integration.md) |
+| **函数模式** | 生成全局函数的 Objective-C 代码 | [第 3 章 - Objective-C 代码调用（函数模式）](docs/unity_integration.md) |
+| **C++ 模式** | 生成 C++ 类或函数代码 | [第 4 章 - C++ 代码调用](docs/unity_integration.md) |
+| **String 常量模式** | 生成字符串常量定义 | [第 5 章 - 完整示例](docs/unity_integration.md) |
+
+### 快速集成步骤
+
+1. **复制文件**：将生成的 `.h` 和 `.m` 文件复制到 Unity 项目的 `Assets/Plugins/iOS/` 目录
+2. **创建 C# 包装类**：
+   - **普通模式**：使用工厂函数模式，通过 `ClassName_Create` 创建实例，`ClassName_Destroy` 释放实例
+   - **函数模式**：使用 `DllImport("__Internal")` 声明原生方法
+3. **平台条件编译**：使用 `#if UNITY_IOS && !UNITY_EDITOR` 避免编辑器中调用
+4. **构建设置**：关闭 `Strip Engine Code`，确保原生代码不被剥离
+
+### 普通模式示例（类/方法/属性）
+
+#### 生成的 Objective-C 类
+```objc
+// ABDataCacheManager.h
+@interface ABDataCacheManager : NSObject
+@property (nonatomic, strong) NSString *cacheKey;
+- (instancetype)initWithCacheKey:(NSString *)key;
+- (void)loadData;
+- (NSString *)getData;
++ (void)clearAllCache;
+@end
+```
+
+#### C# 包装类（工厂函数模式）
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public class ABDataCacheManagerWrapper : IDisposable
+{
+    private System.IntPtr nativePtr;
+    
+    #if UNITY_IOS && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern System.IntPtr ABDataCacheManager_Create(string key);
+    
+    [DllImport("__Internal")]
+    private static extern void ABDataCacheManager_Destroy(System.IntPtr ptr);
+    
+    [DllImport("__Internal")]
+    private static extern void ABDataCacheManager_LoadData(System.IntPtr ptr);
+    
+    [DllImport("__Internal")]
+    private static extern System.IntPtr ABDataCacheManager_GetData(System.IntPtr ptr);
+    
+    [DllImport("__Internal")]
+    private static extern void ABDataCacheManager_ClearAllCache();
+    #endif
+    
+    public ABDataCacheManagerWrapper(string key)
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        nativePtr = ABDataCacheManager_Create(key);
+        #endif
+    }
+    
+    public void LoadData()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        ABDataCacheManager_LoadData(nativePtr);
+        #endif
+    }
+    
+    public string GetData()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        System.IntPtr ptr = ABDataCacheManager_GetData(nativePtr);
+        return Marshal.PtrToStringAnsi(ptr);
+        #else
+        return string.Empty;
+        #endif
+    }
+    
+    public static void ClearAllCache()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        ABDataCacheManager_ClearAllCache();
+        #endif
+    }
+    
+    public void Dispose()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        if (nativePtr != System.IntPtr.Zero)
+        {
+            ABDataCacheManager_Destroy(nativePtr);
+            nativePtr = System.IntPtr.Zero;
+        }
+        #endif
+        GC.SuppressFinalize(this);
+    }
+}
+```
+
+### 函数模式示例
+
+```csharp
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public class iOSPluginWrapper
+{
+    #if UNITY_IOS && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern void ABPrintStringConstants();
+    #endif
+    
+    public static void PrintConstants()
+    {
+        #if UNITY_IOS && !UNITY_EDITOR
+        ABPrintStringConstants();
+        #else
+        Debug.Log("[iOS Plugin] Running in Editor");
+        #endif
+    }
+}
+```
 
 ---
 

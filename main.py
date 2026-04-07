@@ -17,6 +17,8 @@ from core.file_writer import FileWriter
 from core.objc_generator import ObjCGenerator
 from core.cpp_generator import CppGenerator
 from core.string_generator import StringGenerator
+from core.registry_generator import RegistryGenerator
+from core.template_engine import TemplateEngine
 from tools.line_counter import LineCounter, ReportGenerator
 
 
@@ -86,6 +88,7 @@ def main() -> int:
         else:
             print(f"  生成类数：{config['classCount']}")
             print(f"  总行数范围：{config['totalLineRange']}")
+            print(f"  多样性级别：{config.get('diversityLevel', 'high')}")
     except Exception as e:
         print(f"  错误：{e}")
         return 1
@@ -94,8 +97,14 @@ def main() -> int:
     print("\n[2/6] 加载词库配置...")
     try:
         vocabulary = ConfigLoader.load_vocabulary(config["vocabularyFile"])
-        print(f"  类名前缀词数：{len(vocabulary.get('class', {}).get('prefix', []))}")
-        print(f"  方法名动词数：{len(vocabulary.get('method', {}).get('verb', []))}")
+        # 支持新旧词库格式
+        custom_vocab = vocabulary.get("custom", vocabulary)
+        builtin_vocab = vocabulary.get("builtin", {})
+        print(f"  类名前缀词数：{len(custom_vocab.get('class', {}).get('prefix', []))}")
+        print(f"  方法名动词数：{len(custom_vocab.get('method', {}).get('verb', []))}")
+        print(f"  内置参数类型数：{len(builtin_vocab.get('paramType', {}).get('primitive', []))}")
+        print(f"  内置返回类型数：{len(builtin_vocab.get('returnType', {}).get('primitive', []))}")
+        print(f"  内置代码块类型数：{len(builtin_vocab.get('codeBlock', {}))}")
     except Exception as e:
         print(f"  错误：{e}")
         return 1
@@ -111,7 +120,7 @@ def main() -> int:
     # 4. 初始化命名构建器
     print("\n[4/6] 初始化命名构建器...")
     name_builder = NameBuilder(
-        vocabulary=vocabulary,
+        vocabulary=custom_vocab,
         state_store=state_store,
         class_prefix=config.get("classPrefix", "")
     )
@@ -158,9 +167,25 @@ def main() -> int:
     total_lines = 0
     generated_classes = []
     
+    # 构建多样性配置
+    diversity_config = {
+        "diversityLevel": config.get("diversityLevel", "high"),
+        "enableAsyncMethods": config.get("enableAsyncMethods", True),
+        "enableBlockCallbacks": config.get("enableBlockCallbacks", True),
+        "enableErrorHandling": config.get("enableErrorHandling", True),
+        "enableGenericTypes": config.get("enableGenericTypes", True),
+        "enableChainableMethods": config.get("enableChainableMethods", True),
+        "enableFactoryMethods": config.get("enableFactoryMethods", True),
+        "enableSingletonPattern": config.get("enableSingletonPattern", True),
+        "enableDelegatePattern": config.get("enableDelegatePattern", True),
+        "enableCacheLogic": config.get("enableCacheLogic", True),
+        "enableValidationLogic": config.get("enableValidationLogic", True),
+        "enableLoggingLogic": config.get("enableLoggingLogic", True)
+    }
+    
     if config["language"] == "string":
         # String 常量生成模式
-        string_generator = StringGenerator(vocabulary=vocabulary)
+        string_generator = StringGenerator(vocabulary=custom_vocab)
         string_generator.set_seed(config.get("randomSeed", 12345))
         
         string_count = config.get("stringCount", 1000)
@@ -190,11 +215,22 @@ def main() -> int:
         total_lines += len(file_info["content"].split("\n"))
         generated_classes.append("ABStringConstants")
     else:
-        # 原有的类生成模式
+        # 原有的类生成模式 - 使用多样性配置初始化生成器
         if config["language"] == "objc":
-            generator = ObjCGenerator(class_prefix=config.get("classPrefix", ""))
+            generator = ObjCGenerator(
+                class_prefix=config.get("classPrefix", ""),
+                vocabulary=vocabulary,
+                diversity_config=diversity_config
+            )
         else:
-            generator = CppGenerator(class_prefix=config.get("classPrefix", ""))
+            generator = CppGenerator(
+                class_prefix=config.get("classPrefix", ""),
+                vocabulary=vocabulary,
+                diversity_config=diversity_config
+            )
+        
+        # 设置随机种子
+        generator.set_seed(config.get("randomSeed", 12345))
         
         # 生成类
         for i, budget in enumerate(budgets):
@@ -215,14 +251,14 @@ def main() -> int:
             properties = []
             prop_names = name_builder.generate_property_names(budget["properties_count"])
             for prop_name in prop_names:
-                prop_type = choose_property_type(name_builder)
+                prop_type = choose_property_type(name_builder, config["language"])
                 properties.append({"name": prop_name, "type": prop_type})
             
-            # 生成方法
+            # 生成方法 - 使用模板引擎增加多样性
             methods = []
             method_names = name_builder.generate_method_names(budget["methods_count"])
-            for method_name in method_names:
-                return_type = choose_return_type(name_builder)
+            for idx, method_name in enumerate(method_names):
+                return_type = choose_return_type(name_builder, vocabulary, config["language"])
                 has_params = name_builder.random.random() > 0.5
                 params = []
                 if has_params:
@@ -230,15 +266,23 @@ def main() -> int:
                     for j in range(param_count):
                         params.append({
                             "name": f"param{j}",
-                            "type": choose_param_type(name_builder)
+                            "type": choose_param_type(name_builder, vocabulary, config["language"])
                         })
                 
-                methods.append({
-                    "name": method_name,
-                    "return_type": return_type,
-                    "params": params,
-                    "complexity": line_budget.get_method_complexity(budget["lines_per_method"])
-                })
+                # 使用模板引擎生成方法模板
+                if diversity_config.get("diversityLevel", "high") == "high":
+                    method_info = generator.generate_method_with_template(class_name, idx)
+                    method_info["name"] = method_name  # 使用原有方法名
+                    method_info["params"] = params
+                    method_info["return_type"] = return_type
+                    methods.append(method_info)
+                else:
+                    methods.append({
+                        "name": method_name,
+                        "return_type": return_type,
+                        "params": params,
+                        "complexity": line_budget.get_method_complexity(budget["lines_per_method"])
+                    })
             
             # 生成文件
             if config["language"] == "objc":
@@ -271,6 +315,40 @@ def main() -> int:
                 total_lines += len(file_info["content"].split("\n"))
             
             generated_classes.append(class_name)
+    
+    # 8. 生成统一入口注册表（如果启用）
+    if config.get("generateRegistry", False):
+        print(f"\n{'=' * 60}")
+        print("生成统一入口注册表...")
+        
+        registry_language = config.get("registryLanguage", "objc")
+        print(f"  注册表语言：{registry_language}")
+        
+        # 增量生成：从状态文件获取所有已生成的类名，而不仅仅是当次生成的
+        all_classes_for_registry = state_store.get_used_class_names()
+        print(f"  注册表包含类数：{len(all_classes_for_registry)}")
+        
+        registry_generator = RegistryGenerator(class_prefix=config.get("classPrefix", "AB"))
+        
+        # 生成注册表实现文件
+        registry_file = registry_generator.generate_registry(all_classes_for_registry, registry_language)
+        # 注册表文件需要允许覆盖以支持增量更新
+        result = file_writer.write_file(registry_file["filename"], registry_file["content"], check_exists=False)
+        print(f"  写入注册表文件：{result}")
+        
+        # 生成注册表头文件
+        header_file = registry_generator.generate_header_file(all_classes_for_registry)
+        # 注册表头文件需要允许覆盖以支持增量更新
+        result = file_writer.write_file(header_file["filename"], header_file["content"], check_exists=False)
+        print(f"  写入头文件：{result}")
+        
+        # 将注册表文件记录到状态
+        registry_path = os.path.join(file_writer.output_dir, registry_file["filename"])
+        state_store.mark_file_generated(registry_path)
+        header_path = os.path.join(file_writer.output_dir, header_file["filename"])
+        state_store.mark_file_generated(header_path)
+        
+        print(f"  注册表生成完成!")
     
     # 9. 保存状态
     print(f"\n{'=' * 60}")
@@ -332,23 +410,60 @@ def main() -> int:
     return 0
 
 
-def choose_property_type(name_builder: NameBuilder) -> str:
+def choose_property_type(name_builder: NameBuilder, language: str = "objc") -> str:
     """根据随机选择属性类型"""
-    types = [
-        "NSString *",
-        "NSInteger",
-        "BOOL",
-        "NSArray *",
-        "NSDictionary *",
-        "int",
-        "float",
-        "double"
-    ]
+    if language == "cpp":
+        types = [
+            "std::string",
+            "int",
+            "bool",
+            "std::vector<void*>",
+            "std::map<std::string, void*>",
+            "int",
+            "float",
+            "double"
+        ]
+    else:
+        types = [
+            "NSString *",
+            "NSInteger",
+            "BOOL",
+            "NSArray *",
+            "NSDictionary *",
+            "int",
+            "float",
+            "double"
+        ]
     return name_builder.random.choice(types)
 
 
-def choose_return_type(name_builder: NameBuilder) -> str:
-    """根据随机选择返回类型"""
+def choose_return_type(name_builder: NameBuilder, vocabulary: Optional[Dict[str, Any]] = None, language: str = "objc") -> str:
+    """根据随机选择返回类型，支持从词库中选择"""
+    if language == "cpp":
+        # C++ 返回类型
+        types = [
+            "void",
+            "void",
+            "void",
+            "int",
+            "bool",
+            "std::string",
+            "int",
+            "float"
+        ]
+        return name_builder.random.choice(types)
+    
+    # 如果提供了词库，从内置词库中选择
+    if vocabulary:
+        builtin = vocabulary.get("builtin", {})
+        return_types = builtin.get("returnType", {})
+        # 从不同类型中随机选择
+        type_categories = ["primitive", "object", "optional", "errorHandling"]
+        category = name_builder.random.choice(type_categories)
+        if category in return_types and return_types[category]:
+            return name_builder.random.choice(return_types[category])
+    
+    # 默认返回类型（Objective-C）
     types = [
         "void",
         "void",
@@ -362,8 +477,31 @@ def choose_return_type(name_builder: NameBuilder) -> str:
     return name_builder.random.choice(types)
 
 
-def choose_param_type(name_builder: NameBuilder) -> str:
-    """根据随机选择参数类型"""
+def choose_param_type(name_builder: NameBuilder, vocabulary: Optional[Dict[str, Any]] = None, language: str = "objc") -> str:
+    """根据随机选择参数类型，支持从词库中选择"""
+    if language == "cpp":
+        # C++ 参数类型
+        types = [
+            "int",
+            "std::string",
+            "bool",
+            "int",
+            "float",
+            "void*"
+        ]
+        return name_builder.random.choice(types)
+    
+    # 如果提供了词库，从内置词库中选择
+    if vocabulary:
+        builtin = vocabulary.get("builtin", {})
+        param_types = builtin.get("paramType", {})
+        # 从不同类型中随机选择
+        type_categories = ["primitive", "object", "pointer"]
+        category = name_builder.random.choice(type_categories)
+        if category in param_types and param_types[category]:
+            return name_builder.random.choice(param_types[category])
+    
+    # 默认参数类型（Objective-C）
     types = [
         "NSInteger",
         "NSString *",
