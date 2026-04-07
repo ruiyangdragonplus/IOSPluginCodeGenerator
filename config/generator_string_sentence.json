@@ -1,0 +1,11 @@
+{
+  "language": "string",
+  "outputDir": "./output_string_sentence",
+  "stringCount": 20,
+  "stringMode": "sentence",
+  "stringLanguage": "objc",
+  "randomSeed": 12345,
+  "stateFile": "./config/state.json",
+  "vocabularyFile": "./config/vocabulary.json",
+  "showStats": true
+}

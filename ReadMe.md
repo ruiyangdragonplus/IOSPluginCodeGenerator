@@ -1,6 +1,6 @@
 # iOS 插件代码生成器
 
-一个基于 Python 的 iOS 原生代码批量生成工具，采用词库驱动命名方式，支持 Objective-C 和 C++ 两种语言，具备增量生成、行数控制和自动统计等功能。
+一个基于 Python 的 iOS 原生代码批量生成工具，采用词库驱动命名方式，支持 Objective-C、C++ 和 String 常量三种生成模式，具备增量生成、行数控制和自动统计等功能。
 
 ## 目录
 
@@ -26,11 +26,12 @@
 ### 主要功能
 批量生成 iOS 原生代码文件，用于合规测试场景下的原生代码样板生成，支持：
 
-- **多语言支持**：Objective-C (`.h/.m`) 和 C++ (`.hpp/.cpp`)
-- **词库驱动命名**：自动组合生成类名、方法名、属性名
+- **多语言支持**：Objective-C (`.h/.m`)、C++ (`.hpp/.cpp`) 和 String 常量 (`.m/.cpp`)
+- **词库驱动命名**：自动组合生成类名、方法名、属性名和 String 内容
 - **行数控制**：精确控制总输出行数和单类行数
 - **增量生成**：支持多次执行，避免命名重复
 - **自动统计**：生成后自动显示代码行数统计报告
+- **String 常量模式**：生成包含多个 String 常量的单个文件，支持词汇和句子两种模式
 
 ### 技术特点
 
@@ -83,7 +84,7 @@ python main.py --config ./config/generator.json --language cpp --output ./output
 
 ## 功能特性
 
-### 1. 多语言支持（ObjC/C++）
+### 1. 多语言支持（ObjC/C++/String）
 
 通过配置 `language` 参数选择生成语言：
 
@@ -91,6 +92,75 @@ python main.py --config ./config/generator.json --language cpp --output ./output
 |------|--------|-----------|
 | Objective-C | `objc` | `.h` / `.m` |
 | C++ | `cpp` | `.hpp` / `.cpp` |
+| String 常量 | `string` | `.m` / `.cpp` |
+
+### 2. String 常量生成模式
+
+**功能说明**：
+生成包含随机 String 常量的单个文件，支持 Objective-C 和 C++ 格式，适用于 Unity Plugins 中的字符串资源管理。
+
+**配置项**：
+```json
+{
+  "language": "string",
+  "outputDir": "./output_string",
+  "stringCount": 1000,
+  "stringMode": "word",
+  "stringLanguage": "objc",
+  "randomSeed": 12345
+}
+```
+
+**配置项说明**：
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `stringCount` | int | 生成的 String 数量 | 1000 |
+| `stringMode` | string | `word`（词汇组合）或 `sentence`（句子模式） | word |
+| `stringLanguage` | string | 输出格式：`objc` 或 `cpp` | objc |
+
+**Objective-C 输出示例**：
+```objc
+// ABStringConstants.m
+#import <Foundation/Foundation.h>
+
+static NSString * const ABStringConstant_0 = @"Data Cache Manager";
+static NSString * const ABStringConstant_1 = @"Fast Signal Handler";
+
+void ABPrintStringConstants() {
+    if (YES) return;
+    NSLog(@"%@", ABStringConstant_0);
+    NSLog(@"%@", ABStringConstant_1);
+}
+```
+
+**C++ 输出示例**：
+```cpp
+// ABStringConstants.cpp
+#include <cstdio>
+
+static const char ABStringConstant_0[] = "Data Cache Manager";
+static const char ABStringConstant_1[] = "Fast Signal Handler";
+
+void ABPrintStringConstants() {
+    if (true) return;
+    printf("%s\n", ABStringConstant_0);
+    printf("%s\n", ABStringConstant_1);
+}
+```
+
+**使用示例**：
+```bash
+# Objective-C 格式（词汇模式）
+python main.py --config ./config/generator_string.json
+
+# C++ 格式（词汇模式）
+python main.py --config ./config/generator_string_cpp.json
+
+# 句子模式
+python main.py --config ./config/generator_string_sentence.json
+```
+
+### 3. 词库驱动命名
 
 **Objective-C 示例输出：**
 ```objc
@@ -130,7 +200,7 @@ private:
 };
 ```
 
-### 2. 词库驱动命名
+### 4. 词库驱动命名
 
 所有命名均从词库中组合生成，确保：
 
@@ -138,7 +208,7 @@ private:
 - 方法名：camelCase，格式为 `[动词]+[对象]+[后缀]`
 - 属性名：camelCase，格式为 `[形容词]+[名词]`
 
-### 3. 行数控制
+### 5. 行数控制
 
 支持多层级行数控制：
 
@@ -149,14 +219,14 @@ private:
 | `methodsPerClassRange` | 每类方法数量范围 | `[4, 15]` |
 | `propertiesPerClassRange` | 每类属性数量范围 | `[2, 5]` |
 
-### 4. 增量生成
+### 6. 增量生成
 
 - 通过状态文件记录已使用的命名
 - 后续生成自动跳过已使用的类名、方法名
 - 支持多次执行累积生成大量文件
 - 状态文件损坏时自动备份并重建
 
-### 5. 自动统计报告
+### 7. 自动统计报告
 
 生成完成后自动显示：
 
@@ -192,9 +262,12 @@ private:
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `language` | string | 是 | - | 生成语言：`objc` 或 `cpp` |
+| `language` | string | 是 | - | 生成语言：`objc`、`cpp` 或 `string` |
 | `outputDir` | string | 是 | - | 输出目录路径 |
-| `classCount` | int | 是 | - | 生成类的数量 |
+| `classCount` | int | 条件 | - | 生成类的数量（非 string 模式必填） |
+| `stringCount` | int | 条件 | `1000` | String 数量（string 模式） |
+| `stringMode` | string | 否 | `word` | String 模式：`word` 或 `sentence` |
+| `stringLanguage` | string | 否 | `objc` | String 输出语言：`objc` 或 `cpp` |
 | `totalLineRange` | int[] | 是 | - | 总输出行数范围 [min, max] |
 | `linesPerClassRange` | int[] | 是 | - | 单类行数范围 [min, max] |
 | `methodsPerClassRange` | int[] | 是 | - | 每类方法数量范围 [min, max] |
@@ -206,6 +279,21 @@ private:
 | `stateFile` | string | 是 | - | 状态文件路径 |
 | `vocabularyFile` | string | 是 | - | 词库文件路径 |
 | `showStats` | bool | 否 | `true` | 是否显示统计报告 |
+
+**String 模式配置示例：**
+```json
+{
+  "language": "string",
+  "outputDir": "./output_string",
+  "stringCount": 1000,
+  "stringMode": "word",
+  "stringLanguage": "objc",
+  "randomSeed": 12345,
+  "stateFile": "./config/state.json",
+  "vocabularyFile": "./config/vocabulary.json",
+  "showStats": true
+}
+```
 
 ### `vocabulary.json` 词库结构
 
@@ -265,7 +353,7 @@ private:
 | 参数 | 简写 | 说明 | 示例 |
 |------|------|------|------|
 | `--config` | - | 配置文件路径 | `--config ./config/generator.json` |
-| `--language` | - | 覆盖配置中的语言选项 | `--language cpp` |
+| `--language` | - | 覆盖配置中的语言选项 | `--language string` |
 | `--seed` | - | 覆盖随机种子 | `--seed 999` |
 | `--output` | - | 覆盖输出目录 | `--output D:/Generated/` |
 | `--help` | `-h` | 显示帮助信息 | `--help` |
@@ -280,6 +368,11 @@ python main.py --config ./config/generator.json
 #### 指定语言
 ```bash
 python main.py --config ./config/generator.json --language cpp
+```
+
+#### String 模式生成
+```bash
+python main.py --config ./config/generator_string.json
 ```
 
 #### 指定随机种子（用于复现）
@@ -438,7 +531,8 @@ IOSPluginCodeGenerator/
 │   ├── line_budget.py      # 行数预算分配器
 │   ├── file_writer.py      # 文件写入器
 │   ├── objc_generator.py   # Objective-C 生成器
-│   └── cpp_generator.py    # C++ 生成器
+│   ├── cpp_generator.py    # C++ 生成器
+│   └── string_generator.py # String 常量生成器
 └── tools/                  # 工具脚本目录
     └── line_counter.py     # 代码行数统计工具
 ```
@@ -455,6 +549,7 @@ IOSPluginCodeGenerator/
 | 文件写入器 | [`core/file_writer.py`](core/file_writer.py) | 输出文件到磁盘，处理目录创建和覆盖策略 |
 | ObjC 生成器 | [`core/objc_generator.py`](core/objc_generator.py) | 生成 Objective-C 头文件和实现文件 |
 | C++ 生成器 | [`core/cpp_generator.py`](core/cpp_generator.py) | 生成 C++ 头文件和实现文件 |
+| String 生成器 | [`core/string_generator.py`](core/string_generator.py) | 生成 String 常量文件，支持 Objective-C 和 C++ 格式，提供词汇组合和句子两种模式 |
 | 行数统计 | [`tools/line_counter.py`](tools/line_counter.py) | 统计代码行数，生成统计报告 |
 
 ---
@@ -481,6 +576,26 @@ python main.py --config ./config/generator.json --language cpp
 
 ```bash
 python main.py --config ./config/generator_test5.json
+```
+
+### String 模式生成示例
+
+生成 1000 个 String 常量（Objective-C 格式）：
+
+```bash
+python main.py --config ./config/generator_string.json
+```
+
+生成 50 个 String 常量（C++ 格式）：
+
+```bash
+python main.py --config ./config/generator_string_cpp.json
+```
+
+生成句子模式的 String 常量：
+
+```bash
+python main.py --config ./config/generator_string_sentence.json
 ```
 
 ### 大规模生成示例
@@ -612,7 +727,7 @@ A: 是的，生成的代码满足基本语法要求，可以直接编译。但�
 A: 编辑 `config/vocabulary.json` 文件，在对应类别的数组中添加新词汇即可。
 
 ### Q: 支持生成其他语言吗？
-A: 当前支持 Objective-C 和 C++。如需扩展其他语言，可参考现有生成器模块实现新的生成器类。
+A: 当前支持 Objective-C、C++ 和 String 常量模式。如需扩展其他语言，可参考现有生成器模块实现新的生成器类。
 
 ---
 

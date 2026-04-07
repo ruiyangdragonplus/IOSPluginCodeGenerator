@@ -32,14 +32,12 @@ class ConfigLoader:
     REQUIRED_FIELDS = [
         "language",
         "outputDir",
-        "classCount",
-        "totalLineRange",
         "stateFile",
         "vocabularyFile"
     ]
     
     # 有效的语言选项
-    VALID_LANGUAGES = ["objc", "cpp"]
+    VALID_LANGUAGES = ["objc", "cpp", "string"]
     
     def __init__(self, config_path: str):
         """
@@ -99,15 +97,25 @@ class ConfigLoader:
         if self.config.get("language") not in self.VALID_LANGUAGES:
             raise ValueError(f"无效的语言选项：{self.config.get('language')}，必须是 {self.VALID_LANGUAGES} 之一")
         
-        # 校验范围配置
-        self._validate_range("totalLineRange", self.config.get("totalLineRange"))
-        self._validate_range("linesPerClassRange", self.config.get("linesPerClassRange"))
-        self._validate_range("methodsPerClassRange", self.config.get("methodsPerClassRange"))
-        self._validate_range("propertiesPerClassRange", self.config.get("propertiesPerClassRange"))
-        
-        # 校验 classCount
-        if not isinstance(self.config.get("classCount"), int) or self.config["classCount"] <= 0:
-            raise ValueError("classCount 必须是正整数")
+        # 对于 string 模式，使用不同的校验逻辑
+        if self.config.get("language") == "string":
+            # string 模式需要 stringCount
+            if "stringCount" not in self.config:
+                self.config["stringCount"] = 1000
+            if not isinstance(self.config.get("stringCount"), int) or self.config["stringCount"] <= 0:
+                raise ValueError("stringCount 必须是正整数")
+        else:
+            # 原有校验逻辑
+            if "classCount" not in self.config:
+                self.config["classCount"] = 6
+            if not isinstance(self.config.get("classCount"), int) or self.config["classCount"] <= 0:
+                raise ValueError("classCount 必须是正整数")
+            
+            # 校验范围配置
+            self._validate_range("totalLineRange", self.config.get("totalLineRange"))
+            self._validate_range("linesPerClassRange", self.config.get("linesPerClassRange"))
+            self._validate_range("methodsPerClassRange", self.config.get("methodsPerClassRange"))
+            self._validate_range("propertiesPerClassRange", self.config.get("propertiesPerClassRange"))
     
     def _validate_range(self, field_name: str, value: Any) -> None:
         """

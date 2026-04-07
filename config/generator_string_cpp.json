@@ -1,0 +1,11 @@
+{
+  "language": "string",
+  "outputDir": "./output_string_cpp",
+  "stringCount": 50,
+  "stringMode": "word",
+  "stringLanguage": "cpp",
+  "randomSeed": 12345,
+  "stateFile": "./config/state.json",
+  "vocabularyFile": "./config/vocabulary.json",
+  "showStats": true
+}

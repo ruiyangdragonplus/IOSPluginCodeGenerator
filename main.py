@@ -16,6 +16,7 @@ from core.line_budget import LineBudget
 from core.file_writer import FileWriter
 from core.objc_generator import ObjCGenerator
 from core.cpp_generator import CppGenerator
+from core.string_generator import StringGenerator
 from tools.line_counter import LineCounter, ReportGenerator
 
 
@@ -33,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--language",
         type=str,
-        choices=["objc", "cpp"],
+        choices=["objc", "cpp", "string"],
         help="覆盖配置中的语言选项"
     )
     parser.add_argument(
@@ -79,8 +80,12 @@ def main() -> int:
         
         print(f"  语言：{config['language']}")
         print(f"  输出目录：{config['outputDir']}")
-        print(f"  生成类数：{config['classCount']}")
-        print(f"  总行数范围：{config['totalLineRange']}")
+        if config["language"] == "string":
+            print(f"  String 数量：{config.get('stringCount', 1000)}")
+            print(f"  String 模式：{config.get('stringMode', 'word')}")
+        else:
+            print(f"  生成类数：{config['classCount']}")
+            print(f"  总行数范围：{config['totalLineRange']}")
     except Exception as e:
         print(f"  错误：{e}")
         return 1
@@ -145,94 +150,127 @@ def main() -> int:
     print(f"  输出目录：{file_writer.output_dir}")
     print(f"  覆盖模式：{'开启' if config.get('overwrite', False) else '关闭'}")
     
-    # 7. 选择生成器
+    # 7. 选择生成器并生成代码
     print(f"\n{'=' * 60}")
     print(f"开始生成 {config['language'].upper()} 代码...")
     print(f"{'=' * 60}")
     
-    if config["language"] == "objc":
-        generator = ObjCGenerator(class_prefix=config.get("classPrefix", ""))
-    else:
-        generator = CppGenerator(class_prefix=config.get("classPrefix", ""))
-    
-    # 8. 生成类
     total_lines = 0
     generated_classes = []
     
-    for i, budget in enumerate(budgets):
-        print(f"\n生成类 {i + 1}/{config['classCount']}...")
+    if config["language"] == "string":
+        # String 常量生成模式
+        string_generator = StringGenerator(vocabulary=vocabulary)
+        string_generator.set_seed(config.get("randomSeed", 12345))
         
-        # 生成类名
-        class_name = name_builder.generate_class_name()
-        if not class_name:
-            print(f"  错误：无法生成唯一类名，跳过")
-            continue
+        string_count = config.get("stringCount", 1000)
+        string_mode = config.get("stringMode", "word")
         
-        print(f"  类名：{class_name}")
-        print(f"  目标行数：{budget['target_lines']}")
-        print(f"  方法数：{budget['methods_count']}")
-        print(f"  属性数：{budget['properties_count']}")
-        
-        # 生成属性
-        properties = []
-        prop_names = name_builder.generate_property_names(budget["properties_count"])
-        for prop_name in prop_names:
-            prop_type = choose_property_type(name_builder)
-            properties.append({"name": prop_name, "type": prop_type})
-        
-        # 生成方法
-        methods = []
-        method_names = name_builder.generate_method_names(budget["methods_count"])
-        for method_name in method_names:
-            return_type = choose_return_type(name_builder)
-            has_params = name_builder.random.random() > 0.5
-            params = []
-            if has_params:
-                param_count = name_builder.random.randint(1, 2)
-                for j in range(param_count):
-                    params.append({
-                        "name": f"param{j}",
-                        "type": choose_param_type(name_builder)
-                    })
-            
-            methods.append({
-                "name": method_name,
-                "return_type": return_type,
-                "params": params,
-                "complexity": line_budget.get_method_complexity(budget["lines_per_method"])
-            })
+        print(f"\n生成 String 常量文件...")
+        print(f"  String 数量：{string_count}")
+        print(f"  String 模式：{string_mode}")
         
         # 生成文件
-        if config["language"] == "objc":
-            # 对于 ObjC，使用 properties 作为属性列表
-            files = generator.generate_files(
-                class_name=class_name,
-                properties=properties,
-                methods=methods
-            )
-        else:
-            # 对于 C++，使用 members 作为成员变量列表
-            members = [{"name": p["name"], "type": p["type"]} for p in properties]
-            files = generator.generate_files(
-                class_name=class_name,
-                members=members,
-                methods=methods
-            )
+        file_info = string_generator.generate_file(
+            string_count=string_count,
+            language="objc" if config.get("stringLanguage", "objc") == "objc" else "cpp",
+            mode=string_mode
+        )
         
         # 写入文件
-        result = file_writer.write_files(files)
-        print(f"  写入文件：{result['written']}/{len(files)}")
+        result = file_writer.write_files([file_info])
+        print(f"  写入文件：{result['written']}/{len([file_info])}")
         
         # 更新状态
-        for file_info in files:
-            file_path = os.path.join(file_writer.output_dir, file_info["filename"])
+        for f_info in [file_info]:
+            file_path = os.path.join(file_writer.output_dir, f_info["filename"])
             state_store.mark_file_generated(file_path)
         
         # 统计行数
-        for file_info in files:
-            total_lines += len(file_info["content"].split("\n"))
+        total_lines += len(file_info["content"].split("\n"))
+        generated_classes.append("ABStringConstants")
+    else:
+        # 原有的类生成模式
+        if config["language"] == "objc":
+            generator = ObjCGenerator(class_prefix=config.get("classPrefix", ""))
+        else:
+            generator = CppGenerator(class_prefix=config.get("classPrefix", ""))
         
-        generated_classes.append(class_name)
+        # 生成类
+        for i, budget in enumerate(budgets):
+            print(f"\n生成类 {i + 1}/{config['classCount']}...")
+            
+            # 生成类名
+            class_name = name_builder.generate_class_name()
+            if not class_name:
+                print(f"  错误：无法生成唯一类名，跳过")
+                continue
+            
+            print(f"  类名：{class_name}")
+            print(f"  目标行数：{budget['target_lines']}")
+            print(f"  方法数：{budget['methods_count']}")
+            print(f"  属性数：{budget['properties_count']}")
+            
+            # 生成属性
+            properties = []
+            prop_names = name_builder.generate_property_names(budget["properties_count"])
+            for prop_name in prop_names:
+                prop_type = choose_property_type(name_builder)
+                properties.append({"name": prop_name, "type": prop_type})
+            
+            # 生成方法
+            methods = []
+            method_names = name_builder.generate_method_names(budget["methods_count"])
+            for method_name in method_names:
+                return_type = choose_return_type(name_builder)
+                has_params = name_builder.random.random() > 0.5
+                params = []
+                if has_params:
+                    param_count = name_builder.random.randint(1, 2)
+                    for j in range(param_count):
+                        params.append({
+                            "name": f"param{j}",
+                            "type": choose_param_type(name_builder)
+                        })
+                
+                methods.append({
+                    "name": method_name,
+                    "return_type": return_type,
+                    "params": params,
+                    "complexity": line_budget.get_method_complexity(budget["lines_per_method"])
+                })
+            
+            # 生成文件
+            if config["language"] == "objc":
+                # 对于 ObjC，使用 properties 作为属性列表
+                files = generator.generate_files(
+                    class_name=class_name,
+                    properties=properties,
+                    methods=methods
+                )
+            else:
+                # 对于 C++，使用 members 作为成员变量列表
+                members = [{"name": p["name"], "type": p["type"]} for p in properties]
+                files = generator.generate_files(
+                    class_name=class_name,
+                    members=members,
+                    methods=methods
+                )
+            
+            # 写入文件
+            result = file_writer.write_files(files)
+            print(f"  写入文件：{result['written']}/{len(files)}")
+            
+            # 更新状态
+            for file_info in files:
+                file_path = os.path.join(file_writer.output_dir, file_info["filename"])
+                state_store.mark_file_generated(file_path)
+            
+            # 统计行数
+            for file_info in files:
+                total_lines += len(file_info["content"].split("\n"))
+            
+            generated_classes.append(class_name)
     
     # 9. 保存状态
     print(f"\n{'=' * 60}")
