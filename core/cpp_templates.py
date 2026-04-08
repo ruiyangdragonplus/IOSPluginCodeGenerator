@@ -268,8 +268,8 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "body_template": [
             "// Map lookup method",
             'std::cout << __FUNCTION__ << " called with key: " << key << std::endl;',
-            "auto it = dataMap_.find(key);",
-            'if (it != dataMap_.end()) { return it->second; }',
+            "auto it = cache_.find(key);",
+            'if (it != cache_.end()) { return it->second; }',
             'return "";'
         ],
         "applicable_types": ["storage", "registry", "manager", "service"],
@@ -301,17 +301,17 @@ CPP_CODE_BLOCKS: Dict[str, List[str]] = {
         'std::cout << "[VERBOSE] " << __FUNCTION__ << std::endl;',
     ],
     "validation": [
-        "if (value.empty()) { return false; }",
-        "if (ptr == nullptr) { return false; }",
-        "if (count > maxCount) { return false; }",
-        "if (index < 0 || index >= size) { return false; }",
+        "if (message.empty()) { return false; }",
+        "if (ptr_ == nullptr) { return false; }",
+        "if (count_ > maxCount_) { return false; }",
+        "if (index_ < 0 || index_ >= size_) { return false; }",
         "if (!initialized_) { return false; }",
     ],
     "nullCheck": [
-        "if (ptr == nullptr) { return; }",
-        "if (object == nullptr) { return false; }",
+        "if (ptr_ == nullptr) { return; }",
+        "if (obj_ == nullptr) { return false; }",
         "if (!this) { return; }",
-        "if (data_.empty()) { return; }",
+        "if (cache_.empty()) { return; }",
     ],
     "errorHandling": [
         "try { } catch (const std::exception& e) { std::cerr << e.what() << std::endl; }",

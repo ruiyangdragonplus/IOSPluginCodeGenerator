@@ -224,49 +224,71 @@ class ObjCGenerator:
         params = method.get("params", [])
         complexity = method.get("complexity", 1)
         
-        # 构建方法签名
-        if not params:
-            method_sig = method_name
-        else:
-            parts = [method_name]
-            for i, param in enumerate(params):
-                param_name = param.get("name", f"param{i}")
-                param_type = param.get("type", "id")
-                if i == 0:
-                    parts.append(f"{param_name}:({param_type}){param_name}")
-                else:
-                    parts.append(f" {param_name}:({param_type}){param_name}")
-            method_sig = "".join(parts)
+        # 使用与头文件相同的方法生成方法签名
+        method_sig = self._generate_method_signature_for_implementation(method)
         
         # 生成方法体
         lines = []
-        if not params:
-            if return_type == "void":
-                lines.append(f"- (void){method_sig} {{")
-            else:
-                lines.append(f"- ({return_type}){method_sig} {{")
-        else:
-            if return_type == "void":
-                lines.append(f"- (void){method_sig} {{")
-            else:
-                lines.append(f"- ({return_type}){method_sig} {{")
         
-        # 根据复杂度生成方法体内容
         # 如果方法包含模板，使用模板引擎生成方法体
+        is_complete_template = False
+        has_return_statement = False
         if "template" in method:
             template = method["template"]
+            template_params = self._extract_params_from_template(template)
+            if template_params:
+                params = template_params
+            
             enable_code_blocks = self.diversity_config.get("diversityLevel", "high") == "high"
             body_lines = self.template_engine.generate_method_body(
                 template, params, return_type, enable_code_blocks
             )
+            # 检查模板是否是完整的方法体
+            body_template = template.get("body_template", [])
+            body_str = '\n'.join(body_template)
+            # 检查模板是否包含 return 语句（不是占位符）
+            if 'return ' in body_str and 'return {default_value}' not in body_str:
+                has_return_statement = True
+            # 检查是否包含块语法（dispatch_async/dispatch_once）
+            has_block_syntax = '^{' in body_str or 'dispatch_async' in body_str or 'dispatch_once' in body_str
+            
+            # 只有包含 return 语句且没有块语法的模板才是完整模板
+            if has_return_statement and not has_block_syntax:
+                is_complete_template = True
         else:
             body_lines = self._generate_method_body(complexity, params, return_type)
         
-        for body_line in body_lines:
-            lines.append(f"    {body_line}")
+        # 添加方法签名（从 method_sig 提取）
+        lines.append(f"{method_sig} {{")
         
-        # 返回值
-        if return_type != "void":
+        # 处理多行模板（将每个 body_line 按换行符拆分）
+        # 根据代码块的嵌套层次动态调整缩进
+        indent_level = 1  # 方法体内的基础缩进层次
+        for body_line in body_lines:
+            for line in body_line.split('\n'):
+                stripped = line.strip()
+                if not stripped:
+                    lines.append("")
+                    continue
+                
+                # 检查是否是块结束标记（}); 或 }）
+                # 这些应该先减少缩进再输出
+                if stripped.startswith('}'):
+                    indent_level = max(0, indent_level - 1)
+                
+                # 添加当前行
+                lines.append("    " * indent_level + stripped)
+                
+                # 如果行以 { 结尾（不包括字符串字面量中的 {），增加缩进层次
+                # 注意：^{ 不算作独立的 {，它是块语法的一部分
+                if stripped.endswith('{') and not stripped.startswith('if') and not stripped.startswith('for') and not stripped.startswith('while') and not stripped.startswith('switch'):
+                    indent_level += 1
+                elif stripped.endswith('{'):
+                    indent_level += 1
+        
+        # 返回值 - 仅当返回类型不是 void 时添加
+        # 但如果模板已经是完整的方法体（包含 return），不添加
+        if return_type != "void" and not is_complete_template:
             if return_type in ["int", "NSInteger"]:
                 lines.append("    return 0;")
             elif return_type in ["float", "double", "CGFloat"]:
@@ -282,9 +304,92 @@ class ObjCGenerator:
             else:
                 lines.append("    return nil;")
         
+        # 添加方法结束符 - 所有方法都需要 } 来闭合
         lines.append("}")
         
         return "\n".join(lines)
+    
+    def _generate_method_signature_for_implementation(self, method: Dict[str, Any]) -> str:
+        """
+        生成实现文件中的方法签名（与头文件保持一致）
+        
+        Args:
+            method: 方法信息
+            
+        Returns:
+            方法签名字符串（不带分号和末尾的 {）
+        """
+        method_name = method.get("name", "")
+        return_type = method.get("return_type", "void")
+        
+        # 如果方法包含模板，使用模板引擎生成签名
+        if "template" in method:
+            template = method["template"]
+            signature = self.template_engine.generate_method_signature(method_name, template, return_type)
+            # 移除分号
+            signature = signature.rstrip(';')
+            return signature
+        
+        # 否则使用传统方式生成
+        params = method.get("params", [])
+        
+        if not params:
+            # 无参数方法
+            if return_type == "void":
+                return f"- (void){method_name}"
+            else:
+                return f"- ({return_type}){method_name}"
+        else:
+            # 有参数方法
+            parts = [method_name]
+            for i, param in enumerate(params):
+                param_name = param.get("name", f"param{i}")
+                param_type = param.get("type", "id")
+                if i == 0:
+                    parts.append(f"{param_name}:({param_type}){param_name}")
+                else:
+                    parts.append(f" {param_name}:({param_type}){param_name}")
+            
+            method_sig = "".join(parts)
+            if return_type == "void":
+                return f"- (void){method_sig}"
+            else:
+                return f"- ({return_type}){method_sig}"
+    
+    def _extract_params_from_template(self, template: Dict[str, Any]) -> List[Dict[str, str]]:
+        """
+        从模板签名格式中提取参数列表
+        
+        Args:
+            template: 方法模板
+            
+        Returns:
+            参数列表，每个元素包含 name 和 type
+        """
+        signature_format = template.get("signature_format", "")
+        params = []
+        
+        # 解析签名格式中的参数
+        # 格式示例："- (void){method_name}WithArray:(NSArray *)array;"
+        # 或："- (void){method_name}WithBlock:(void (^)(id result))block;"
+        
+        # 查找所有 :(Type)name 模式
+        import re
+        # 匹配 :(type)name 模式，包括复杂的 block 类型
+        pattern = r':\s*\(([^)]+(?:\)[^)]*)*)\)\s*(\w+)'
+        matches = re.findall(pattern, signature_format)
+        
+        for match in matches:
+            param_type = match[0].strip()
+            param_name = match[1].strip()
+            # 移除类型中的占位符
+            param_type = param_type.replace("{return_type}", "id")
+            params.append({
+                "name": param_name,
+                "type": param_type
+            })
+        
+        return params
     
     def _generate_method_body(self, complexity: int, params: List[Dict], return_type: str) -> List[str]:
         """
@@ -333,12 +438,10 @@ class ObjCGenerator:
             lines.append("")
             if code_blocks.get("loop"):
                 loop_block = self.template_engine.random.choice(code_blocks["loop"])
-                lines.append(loop_block.replace("{ }", "{") + "    // Process item")
-                lines.append("    if (i % 2 == 0) {")
-                if code_blocks.get("log"):
-                    lines.append("        " + self.template_engine.random.choice(code_blocks["log"]))
-                lines.append("    }")
-                lines.append("}")
+                # 将多行模板拆分成单独的行并添加适当的缩进
+                for loop_line in loop_block.split('\n'):
+                    if loop_line.strip():
+                        lines.append("    " + loop_line.strip())
         
         return lines
     

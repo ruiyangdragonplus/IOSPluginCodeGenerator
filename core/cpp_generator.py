@@ -174,7 +174,30 @@ class CppGenerator:
         lines.append(f"    virtual ~{class_name}();")
         lines.append("")
         
-        # 单例方法（如果类类型支持）
+        # 成员变量
+        if members:
+            lines.append("private:")
+            for member in members:
+                member_name = member.get("name", "")
+                member_type = member.get("type", "int")
+                lines.append(f"    {member_type} {member_name};")
+            lines.append("")
+        
+        # 添加默认私有成员（只声明一次）
+        lines.append("private:")
+        lines.append(f"    std::map<std::string, void*> cache_;")
+        lines.append(f"    std::string name_;")
+        lines.append(f"    bool initialized_;")
+        lines.append(f"    int count_;")
+        lines.append(f"    int maxCount_;")
+        lines.append(f"    void* ptr_;")
+        lines.append(f"    void* obj_;")
+        lines.append(f"    int index_;")
+        lines.append(f"    int size_;")
+        lines.append(f"    void* currentValue_;")
+        lines.append("")
+        
+        # 单例方法（如果类类型支持）- 放在成员变量之后避免重复
         class_type = self.detect_class_type(class_name)
         if class_type in ["manager", "service", "storage", "registry"]:
             lines.append(f"    // Singleton")
@@ -188,22 +211,6 @@ class CppGenerator:
                 method_decl = self._generate_method_declaration(method, class_name)
                 lines.append(method_decl)
             lines.append("")
-        
-        # 成员变量
-        if members:
-            lines.append("private:")
-            for member in members:
-                member_name = member.get("name", "")
-                member_type = member.get("type", "int")
-                lines.append(f"    {member_type} {member_name};")
-            lines.append("")
-        
-        # 添加默认私有成员
-        lines.append("private:")
-        lines.append(f"    std::map<std::string, void*> cache_;")
-        lines.append(f"    std::string name_;")
-        lines.append(f"    bool initialized_;")
-        lines.append("")
         
         lines.append("};")
         
@@ -281,6 +288,13 @@ class CppGenerator:
         lines.append(f"{class_name}::{class_name}() {{")
         lines.append("    // Constructor implementation")
         lines.append("    initialized_ = false;")
+        lines.append("    count_ = 0;")
+        lines.append("    maxCount_ = 100;")
+        lines.append("    ptr_ = nullptr;")
+        lines.append("    obj_ = nullptr;")
+        lines.append("    index_ = 0;")
+        lines.append("    size_ = 0;")
+        lines.append("    currentValue_ = nullptr;")
         if members:
             for member in members:
                 member_name = member.get("name", "")
@@ -432,8 +446,8 @@ class CppGenerator:
         # 生成方法名
         method_name = self._generate_method_name_for_template(template, method_index)
         
-        # 生成返回类型 - 使用 C++ 类型系统
-        return_type = self._get_cpp_return_type_for_template(template)
+        # 生成返回类型 - 使用 C++ 类型系统（传入 class_name 以替换占位符）
+        return_type = self._get_cpp_return_type_for_template(template, class_name)
         
         # 生成参数
         params = self._generate_cpp_params_for_template(template)
@@ -447,12 +461,13 @@ class CppGenerator:
             "params": params
         }
     
-    def _get_cpp_return_type_for_template(self, template: Dict[str, Any]) -> str:
+    def _get_cpp_return_type_for_template(self, template: Dict[str, Any], class_name: str = "") -> str:
         """
         根据模板获取 C++ 返回类型
         
         Args:
             template: 方法模板
+            class_name: 类名（用于替换 ClassName 占位符）
             
         Returns:
             C++ 返回类型字符串
@@ -481,11 +496,13 @@ class CppGenerator:
         elif signature_format.startswith("std::vector<"):
             return "std::vector<void*>"
         elif signature_format.startswith("static "):
-            # 处理静态方法
+            # 处理静态方法 - 替换 ClassName 占位符
             if "std::unique_ptr<" in signature_format:
-                return "std::unique_ptr<ClassName>"
+                # 从签名中提取类名占位符并替换
+                return_type = "std::unique_ptr<" + class_name + ">"
+                return return_type
             elif "&" in signature_format:
-                return "ClassName&"
+                return class_name + "&"
             return "void"
         elif signature_format.startswith("int "):
             return "int"
