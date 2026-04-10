@@ -191,12 +191,13 @@ class RegistryGenerator:
         else:
             raise ValueError(f"不支持的语言：{language}。支持的语言：objc, cpp")
     
-    def generate_header_file(self, generated_classes: List[str]) -> Dict[str, str]:
+    def generate_header_file(self, generated_classes: List[str], language: str = "objc") -> Dict[str, str]:
         """
-        生成 Objective-C 头文件（用于声明初始化函数）
+        生成头文件（用于声明初始化函数）
         
         Args:
             generated_classes: 已生成的类名列表
+            language: 目标语言 (objc 或 cpp)
             
         Returns:
             文件信息字典，包含 filename 和 content
@@ -210,23 +211,41 @@ class RegistryGenerator:
         lines.append("// 警告：此文件由工具自动生成，请勿手动修改")
         lines.append("//")
         lines.append("")
-        lines.append("#import <Foundation/Foundation.h>")
-        lines.append("")
         
-        # 函数声明
-        lines.append("#ifdef __cplusplus")
-        lines.append('extern "C" {')
-        lines.append("#endif")
-        lines.append("")
-        lines.append("// 统一初始化入口")
-        lines.append("void ABInitializeAllPlugins();")
-        lines.append("")
-        lines.append("// 统一清理入口")
-        lines.append("void ABCleanupAllPlugins();")
-        lines.append("")
-        lines.append("#ifdef __cplusplus")
-        lines.append("}")
-        lines.append("#endif")
+        if language == "cpp":
+            # C++ 版本：使用 #include 和 C 链接
+            lines.append("#pragma once")
+            lines.append("")
+            lines.append("#ifdef __cplusplus")
+            lines.append('extern "C" {')
+            lines.append("#endif")
+            lines.append("")
+            lines.append("// 统一初始化入口")
+            lines.append("void ABInitializeAllPlugins();")
+            lines.append("")
+            lines.append("// 统一清理入口")
+            lines.append("void ABCleanupAllPlugins();")
+            lines.append("")
+            lines.append("#ifdef __cplusplus")
+            lines.append("}")
+            lines.append("#endif")
+        else:
+            # Objective-C 版本
+            lines.append("#import <Foundation/Foundation.h>")
+            lines.append("")
+            lines.append("#ifdef __cplusplus")
+            lines.append('extern "C" {')
+            lines.append("#endif")
+            lines.append("")
+            lines.append("// 统一初始化入口")
+            lines.append("void ABInitializeAllPlugins();")
+            lines.append("")
+            lines.append("// 统一清理入口")
+            lines.append("void ABCleanupAllPlugins();")
+            lines.append("")
+            lines.append("#ifdef __cplusplus")
+            lines.append("}")
+            lines.append("#endif")
         
         content = "\n".join(lines)
         return {"filename": "ABPluginRegistry.h", "content": content}

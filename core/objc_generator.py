@@ -179,6 +179,9 @@ class ObjCGenerator:
         # 类扩展（私有属性）
         lines.append(f"@interface {class_name} ()")
         lines.append("")
+        # 添加常用的私有属性声明，避免未定义变量错误
+        lines.append("@property (nonatomic, weak) id delegate;")
+        lines.append("@property (nonatomic, strong) NSCache *cache;")
         lines.append("@end")
         lines.append("")
         
@@ -252,8 +255,11 @@ class ObjCGenerator:
             # 检查是否包含块语法（dispatch_async/dispatch_once）
             has_block_syntax = '^{' in body_str or 'dispatch_async' in body_str or 'dispatch_once' in body_str
             
-            # 只有包含 return 语句且没有块语法的模板才是完整模板
-            if has_return_statement and not has_block_syntax:
+            # 包含 return 语句的模板是完整模板（无论是否有块语法）
+            if has_return_statement:
+                is_complete_template = True
+            # 包含块语法的模板也是完整模板（如 async 方法不需要额外 return）
+            elif has_block_syntax:
                 is_complete_template = True
         else:
             body_lines = self._generate_method_body(complexity, params, return_type)
@@ -263,7 +269,9 @@ class ObjCGenerator:
         
         # 处理多行模板（将每个 body_line 按换行符拆分）
         # 根据代码块的嵌套层次动态调整缩进
-        indent_level = 1  # 方法体内的基础缩进层次
+        # 使用缩进栈来跟踪嵌套层次
+        indent_stack = [1]  # 方法体内的基础缩进层次为 1
+        
         for body_line in body_lines:
             for line in body_line.split('\n'):
                 stripped = line.strip()
@@ -274,17 +282,17 @@ class ObjCGenerator:
                 # 检查是否是块结束标记（}); 或 }）
                 # 这些应该先减少缩进再输出
                 if stripped.startswith('}'):
-                    indent_level = max(0, indent_level - 1)
+                    if len(indent_stack) > 1:
+                        indent_stack.pop()
                 
                 # 添加当前行
-                lines.append("    " * indent_level + stripped)
+                current_indent = indent_stack[-1]
+                lines.append("    " * current_indent + stripped)
                 
                 # 如果行以 { 结尾（不包括字符串字面量中的 {），增加缩进层次
-                # 注意：^{ 不算作独立的 {，它是块语法的一部分
-                if stripped.endswith('{') and not stripped.startswith('if') and not stripped.startswith('for') and not stripped.startswith('while') and not stripped.startswith('switch'):
-                    indent_level += 1
-                elif stripped.endswith('{'):
-                    indent_level += 1
+                # 注意：^{ 是块语法的一部分，需要增加缩进
+                if stripped.endswith('{'):
+                    indent_stack.append(current_indent + 1)
         
         # 返回值 - 仅当返回类型不是 void 时添加
         # 但如果模板已经是完整的方法体（包含 return），不添加

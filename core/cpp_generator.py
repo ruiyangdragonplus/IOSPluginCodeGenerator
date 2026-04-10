@@ -185,6 +185,7 @@ class CppGenerator:
         
         # 添加默认私有成员（只声明一次）
         lines.append("private:")
+        lines.append("    // Default members")
         lines.append(f"    std::map<std::string, void*> cache_;")
         lines.append(f"    std::string name_;")
         lines.append(f"    bool initialized_;")
@@ -197,19 +198,30 @@ class CppGenerator:
         lines.append(f"    void* currentValue_;")
         lines.append("")
         
-        # 单例方法（如果类类型支持）- 放在成员变量之后避免重复
+        # 单例方法（如果类类型支持）- 只声明一次
         class_type = self.detect_class_type(class_name)
         if class_type in ["manager", "service", "storage", "registry"]:
+            lines.append("public:")
             lines.append(f"    // Singleton")
             lines.append(f"    static {class_name}& sharedInstance();")
             lines.append("")
         
         # 方法声明
+        # 使用集合跟踪已声明的方法，避免重复
+        declared_methods = set()
+        # 如果类类型支持单例，将单例方法签名加入已声明集合
+        if class_type in ["manager", "service", "storage", "registry"]:
+            declared_methods.add(f"static {class_name}& sharedInstance();")
+        
         if methods:
             lines.append("    // Methods")
             for method in methods:
                 method_decl = self._generate_method_declaration(method, class_name)
-                lines.append(method_decl)
+                # 检查是否已声明（通过方法签名）
+                method_sig = method_decl.strip()
+                if method_sig not in declared_methods:
+                    declared_methods.add(method_sig)
+                    lines.append(method_decl)
             lines.append("")
         
         lines.append("};")

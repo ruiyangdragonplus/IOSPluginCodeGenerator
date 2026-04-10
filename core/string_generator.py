@@ -67,30 +67,34 @@ class StringGenerator:
             
             return " ".join(parts) if parts else "Default String Value"
     
-    def generate_string_constant(self, index: int, mode: str = "word") -> Dict[str, str]:
+    def generate_string_constant(self, index: int, mode: str = "word", prefix: str = "AB") -> Dict[str, str]:
         """
         生成单个 String 常量
         
         Args:
             index: 常量索引
             mode: 生成模式，"word" 或 "sentence"
+            prefix: 常量名前缀
             
         Returns:
             包含 constant_name 和 content 的字典
         """
         content = self.generate_random_content(mode)
         return {
-            "constant_name": f"ABStringConstant_{index}",
+            "constant_name": f"{prefix}StringConstant_{index}",
             "content": content
         }
     
-    def generate_objc_file(self, string_count: int, mode: str = "word") -> str:
+    def generate_objc_file(self, string_count: int, mode: str = "word", prefix: str = "MX11",
+                           output_filename: str = "MX11StringConstants") -> str:
         """
         生成 Objective-C 格式的 String 常量文件
         
         Args:
             string_count: String 数量
             mode: 生成模式
+            prefix: 常量名前缀
+            output_filename: 输出文件名
             
         Returns:
             文件内容
@@ -98,35 +102,38 @@ class StringGenerator:
         lines = []
         
         # 文件头注释
-        lines.append("// ABStringConstants.m")
+        lines.append(f"// {output_filename}.m")
         lines.append("#import <Foundation/Foundation.h>")
         lines.append("")
         
-        # 生成常量声明
+        # 生成常量声明 - 使用 NSString* const 格式
         for i in range(string_count):
-            string_data = self.generate_string_constant(i, mode)
-            lines.append(f'static NSString * const {string_data["constant_name"]} = @"{string_data["content"]}";')
+            string_data = self.generate_string_constant(i, mode, prefix)
+            lines.append(f'NSString* const {string_data["constant_name"]} = @"{string_data["content"]}";')
         
         lines.append("")
         
         # 生成打印函数
-        lines.append("void ABPrintStringConstants() {")
+        lines.append(f"void {prefix}PrintStringConstants() {{")
         lines.append("    if (YES) return;")
         
         for i in range(string_count):
-            lines.append(f'    NSLog(@"%@", ABStringConstant_{i});')
+            lines.append(f'    NSLog(@"%@", {prefix}StringConstant_{i});')
         
         lines.append("}")
         
         return "\n".join(lines)
     
-    def generate_cpp_file(self, string_count: int, mode: str = "word") -> str:
+    def generate_cpp_file(self, string_count: int, mode: str = "word", prefix: str = "MX11",
+                          output_filename: str = "MX11StringConstants") -> str:
         """
         生成 C++ 格式的 String 常量文件
         
         Args:
             string_count: String 数量
             mode: 生成模式
+            prefix: 常量名前缀
+            output_filename: 输出文件名
             
         Returns:
             文件内容
@@ -134,29 +141,30 @@ class StringGenerator:
         lines = []
         
         # 文件头注释
-        lines.append("// ABStringConstants.cpp")
+        lines.append(f"// {output_filename}.cpp")
         lines.append("#include <cstdio>")
         lines.append("")
         
         # 生成常量声明
         for i in range(string_count):
-            string_data = self.generate_string_constant(i, mode)
+            string_data = self.generate_string_constant(i, mode, prefix)
             lines.append(f'static const char {string_data["constant_name"]}[] = "{string_data["content"]}";')
         
         lines.append("")
         
         # 生成打印函数
-        lines.append("void ABPrintStringConstants() {")
+        lines.append(f"void {prefix}PrintStringConstants() {{")
         lines.append("    if (true) return;")
         
         for i in range(string_count):
-            lines.append(f'    printf("%s\\n", ABStringConstant_{i});')
+            lines.append(f'    printf("%s\\n", {prefix}StringConstant_{i});')
         
         lines.append("}")
         
         return "\n".join(lines)
     
-    def generate_file(self, string_count: int, language: str = "objc", mode: str = "word") -> Dict[str, str]:
+    def generate_file(self, string_count: int, language: str = "objc", mode: str = "word",
+                      prefix: str = "MX11", output_filename: str = "MX11StringConstants") -> Dict[str, str]:
         """
         生成完整的 String 常量文件
         
@@ -164,16 +172,18 @@ class StringGenerator:
             string_count: String 数量
             language: 语言选项，"objc" 或 "cpp"
             mode: 生成模式，"word" 或 "sentence"
+            prefix: 常量名前缀
+            output_filename: 输出文件名
             
         Returns:
             文件信息字典，包含 filename 和 content
         """
         if language == "objc":
-            content = self.generate_objc_file(string_count, mode)
-            filename = "ABStringConstants.m"
+            content = self.generate_objc_file(string_count, mode, prefix, output_filename)
+            filename = f"{output_filename}.m"
         else:
-            content = self.generate_cpp_file(string_count, mode)
-            filename = "ABStringConstants.cpp"
+            content = self.generate_cpp_file(string_count, mode, prefix, output_filename)
+            filename = f"{output_filename}.cpp"
         
         return {
             "filename": filename,
