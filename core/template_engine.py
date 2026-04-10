@@ -730,39 +730,37 @@ class TemplateEngine:
         default_value = self._get_default_value_for_type(return_type)
         body_lines = [line.replace("{default_value}", default_value) for line in body_lines]
         
-        # 过滤掉使用未定义变量的行（针对 void 返回类型的方法）
-        if return_type == "void":
-            filtered_lines = []
-            import re
-            for line in body_lines:
-                stripped = line.strip()
-                # 跳过包含 return 语句且带有返回值的行
-                # 但保留 instancetype 类型的 return（如 return instance;）
-                if stripped.startswith("return ") and stripped != "return;":
-                    # 检查是否是 instancetype 或 id 类型的返回
-                    if re.match(r'return\s+(instance|id|instanceType)\s*\w*\s*;', stripped, re.IGNORECASE):
-                        # 保留 instancetype 返回语句
-                        pass
-                    elif re.match(r'return\s+\w+\s*;', stripped):
-                        # 这是普通变量返回，跳过
-                        continue
-                    else:
-                        # 其他 return 语句，跳过
-                        continue
-                # 处理条件语句中的 return（如 if (condition) { return X; }）
-                if re.search(r'\breturn\s+\w+\s*;', stripped):
-                    # 如果整行包含 return 语句，跳过
-                    if stripped.startswith("if ") or stripped.startswith("if("):
-                        # 保留 if 条件但移除 return 部分
-                        # 简单处理：跳过这行
-                        continue
-                # 跳过使用未定义变量的行
+        # 过滤掉使用未定义变量的行
+        filtered_lines = []
+        import re
+        for line in body_lines:
+            stripped = line.strip()
+            # 跳过包含 return 语句且带有返回值的行（仅针对 void 返回类型）
+            if return_type == "void" and stripped.startswith("return ") and stripped != "return;":
+                # 检查是否是 instancetype 或 id 类型的返回
+                if re.match(r'return\s+(instance|id|instanceType|nil|nullptr)\s*;', stripped, re.IGNORECASE):
+                    # 保留 instancetype/nil 返回语句
+                    pass
+                elif re.match(r'return\s+\w+\s*;', stripped):
+                    # 这是普通变量返回，跳过
+                    continue
+                else:
+                    # 其他 return 语句，跳过
+                    continue
+            # 处理条件语句中的 return（如 if (condition) { return X; }）
+            if return_type == "void" and re.search(r'\breturn\s+\w+\s*;', stripped):
+                if stripped.startswith("if ") or stripped.startswith("if("):
+                    # 保留 if 条件但移除 return 部分
+                    # 简单处理：跳过这行
+                    continue
+            # 跳过使用未定义变量的行（但保留注释和 return 语句）
+            if not stripped.startswith("return ") and not stripped.startswith("//"):
                 if not self._code_block_uses_valid_vars(line, available_vars):
                     # 替换为安全的注释或空行
                     if "//" not in line:
                         continue
-                filtered_lines.append(line)
-            body_lines = filtered_lines
+            filtered_lines.append(line)
+        body_lines = filtered_lines
         
         return body_lines
     
@@ -1141,13 +1139,30 @@ class TemplateEngine:
         Returns:
             方法名
         """
-        # 根据模板类型生成方法名
-        template_name = ""
-        for name, tmpl in self.METHOD_TEMPLATES.items():
-            if tmpl == template:
-                template_name = name
-                break
+        # 检查模板是否有固定的方法名（从 signature_format 中提取）
+        signature_format = template.get("signature_format", "")
         
+        # 对于包含固定方法名的模板，直接提取方法名
+        # 例如："+ (instancetype)sharedInstance;" 应返回 "sharedInstance"
+        # 例如："- (id)createInstance;" 应返回 "createInstance"
+        import re
+        
+        # 匹配 Objective-C 类方法：+ (returnType)methodName
+        class_method_match = re.search(r'\+\s*\([^)]+\)\s*(\w+)', signature_format)
+        if class_method_match:
+            return class_method_match.group(1)
+        
+        # 匹配 Objective-C 实例方法：- (returnType)methodName
+        instance_method_match = re.search(r'-\s*\([^)]+\)\s*(\w+)', signature_format)
+        if instance_method_match:
+            method_name = instance_method_match.group(1)
+            # 检查是否包含参数（方法名后是否有冒号）
+            if ':' in signature_format:
+                # 对于带参数的方法，提取第一个参数前的部分作为方法名主体
+                method_name = method_name.split(':')[0]
+            return method_name
+        
+        # 对于没有固定方法名的模板，使用通用命名规则
         # 方法名前缀
         prefixes = ["perform", "execute", "handle", "process", "run", "start", "begin", "init"]
         prefix = self.random.choice(prefixes)
