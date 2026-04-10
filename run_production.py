@@ -207,8 +207,26 @@ def generate_code(config: Dict[str, Any], vocabulary: Dict[str, Any]) -> Dict[st
                     method_info["params"] = params
                 
                 # 设置返回类型（如果模板没有定义）
-                if not method_info.get("return_type"):
-                    method_info["return_type"] = choose_return_type(name_builder, vocabulary, language)
+                # 注意：generate_method_with_template 已经从模板签名中提取了返回类型
+                # 只有当返回类型确实为空时才设置默认值
+                if not method_info.get("return_type") or method_info["return_type"] == "void":
+                    # 检查模板是否有固定的返回类型（如 instancetype）
+                    template = method_info.get("template", {})
+                    signature_format = template.get("signature_format", "")
+                    if signature_format:
+                        # 从签名中提取返回类型
+                        import re
+                        return_type_match = re.search(r'[\+\-]\s*\(([^)]+)\)', signature_format)
+                        if return_type_match:
+                            extracted_type = return_type_match.group(1).strip()
+                            if extracted_type not in ["void"]:
+                                method_info["return_type"] = extracted_type
+                            else:
+                                method_info["return_type"] = choose_return_type(name_builder, vocabulary, language)
+                        else:
+                            method_info["return_type"] = choose_return_type(name_builder, vocabulary, language)
+                    else:
+                        method_info["return_type"] = choose_return_type(name_builder, vocabulary, language)
                 
                 methods.append(method_info)
             else:

@@ -41,6 +41,31 @@ class ObjCGenerator:
         """设置随机种子"""
         self.template_engine.set_seed(seed)
     
+    def _extract_return_type_from_signature(self, signature_format: str) -> str:
+        """
+        从方法签名格式中提取返回类型
+        
+        Args:
+            signature_format: 方法签名格式字符串
+            
+        Returns:
+            返回类型字符串，如果无法提取则返回空字符串
+        """
+        import re
+        
+        # 匹配 Objective-C 类方法：+ (returnType)methodName
+        # 使用 [^\s;]+ 而不是 \w+ 来匹配包含占位符的方法名（如 {method_name}）
+        class_method_match = re.search(r'\+\s*\(([^)]+)\)\s*([^\s;]+)', signature_format)
+        if class_method_match:
+            return class_method_match.group(1).strip()
+        
+        # 匹配 Objective-C 实例方法：- (returnType)methodName
+        instance_method_match = re.search(r'-\s*\(([^)]+)\)\s*([^\s;]+)', signature_format)
+        if instance_method_match:
+            return instance_method_match.group(1).strip()
+        
+        return ""
+    
     def generate_header(
         self,
         class_name: str,
@@ -81,9 +106,16 @@ class ObjCGenerator:
         
         # 方法声明
         if methods:
+            used_method_names = set()  # 跟踪已使用的方法名，避免重复声明
             for method in methods:
-                method_decl = self._generate_method_declaration(method)
-                lines.append(method_decl)
+                # 生成方法签名用于检查唯一性
+                method_signature = self._generate_method_declaration(method)
+                # 提取方法名进行唯一性检查
+                method_name = method.get("name", "")
+                if method_name in used_method_names:
+                    continue  # 跳过重复的方法名
+                used_method_names.add(method_name)
+                lines.append(method_signature)
             lines.append("")
         
         lines.append("@end")
@@ -246,20 +278,27 @@ class ObjCGenerator:
             body_lines = self.template_engine.generate_method_body(
                 template, params, return_type, enable_code_blocks
             )
-            # 检查模板是否是完整的方法体
-            body_template = template.get("body_template", [])
-            body_str = '\n'.join(body_template)
-            # 检查模板是否包含 return 语句（不是占位符）
-            if 'return ' in body_str and 'return {default_value}' not in body_str:
+            # 检查生成的 body_lines 是否包含 return 语句
+            # 注意：使用生成的 body_lines 而不是原始模板，因为 generate_method_body 可能过滤掉某些行
+            body_str = '\n'.join(body_lines)
+            # 检查是否包含 return 语句
+            if 'return ' in body_str:
                 has_return_statement = True
             # 检查是否包含块语法（dispatch_async/dispatch_once）
             has_block_syntax = '^{' in body_str or 'dispatch_async' in body_str or 'dispatch_once' in body_str
+            # 检查是否包含循环结构（for in 循环）
+            has_loop_syntax = 'for (' in body_str or 'for id ' in body_str
+            # 检查是否包含条件结构
+            has_condition_syntax = 'if (' in body_str
             
             # 包含 return 语句的模板是完整模板（无论是否有块语法）
             if has_return_statement:
                 is_complete_template = True
             # 包含块语法的模板也是完整模板（如 async 方法不需要额外 return）
             elif has_block_syntax:
+                is_complete_template = True
+            # 包含循环或条件结构的模板也是完整模板
+            elif has_loop_syntax or has_condition_syntax:
                 is_complete_template = True
         else:
             body_lines = self._generate_method_body(complexity, params, return_type)
@@ -473,10 +512,15 @@ class ObjCGenerator:
         # 生成方法名
         method_name = self.template_engine._generate_method_name_for_template(template, method_index)
         
-        # 生成返回类型
-        builtin = self.template_engine.vocabulary.get("builtin", {}) if self.template_engine.vocabulary else {}
-        return_types = builtin.get("returnType", {}).get("primitive", ["void"])
-        return_type = self.template_engine.random.choice(return_types)
+        # 从模板的 signature_format 中提取返回类型
+        signature_format = template.get("signature_format", "")
+        return_type = self._extract_return_type_from_signature(signature_format)
+        
+        # 如果无法从签名中提取返回类型，则随机生成
+        if not return_type:
+            builtin = self.template_engine.vocabulary.get("builtin", {}) if self.template_engine.vocabulary else {}
+            return_types = builtin.get("returnType", {}).get("primitive", ["void"])
+            return_type = self.template_engine.random.choice(return_types)
         
         return {
             "name": method_name,

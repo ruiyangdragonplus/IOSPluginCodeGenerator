@@ -737,9 +737,10 @@ class TemplateEngine:
             stripped = line.strip()
             # 跳过包含 return 语句且带有返回值的行（仅针对 void 返回类型）
             if return_type == "void" and stripped.startswith("return ") and stripped != "return;":
-                # 检查是否是 instancetype 或 id 类型的返回
-                if re.match(r'return\s+(instance|id|instanceType|nil|nullptr)\s*;', stripped, re.IGNORECASE):
-                    # 保留 instancetype/nil 返回语句
+                # 检查是否是 instancetype/nil/self 类型的返回（保留这些）
+                # 匹配：return nil; return self; return instance; return id; return sharedInstance; 等
+                if re.match(r'return\s+(nil|self|instance|id|instanceType|nullptr|sharedInstance)\s*;', stripped, re.IGNORECASE):
+                    # 保留这些返回语句
                     pass
                 elif re.match(r'return\s+\w+\s*;', stripped):
                     # 这是普通变量返回，跳过
