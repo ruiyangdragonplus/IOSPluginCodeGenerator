@@ -110,10 +110,10 @@ class RegistryGenerator:
         lines.append("//")
         lines.append("")
         
-        # 导入所有生成的类
+        # 导入所有生成的类（使用 .h 扩展名以便 Unity 识别）
         lines.append("// 导入所有生成的类")
         for class_name in generated_classes:
-            lines.append(f'#include "{class_name}.hpp"')
+            lines.append(f'#include "{class_name}.h"')
         lines.append("")
         
         # 包含必要的头文件

@@ -1,7 +1,7 @@
 """
 C++ 代码生成器模块
 完全独立于 Objective-C 的 C++ 代码生成器
-负责生成 .hpp 头文件和 .cpp 实现文件
+负责生成 .h 头文件和 .cpp 实现文件（使用 .h 以便 Unity iOS 构建系统识别）
 """
 
 from typing import Dict, List, Any, Optional, Tuple
@@ -287,8 +287,8 @@ class CppGenerator:
         """
         lines = []
         
-        # 包含头文件
-        lines.append(f'#include "{class_name}.hpp"')
+        # 包含头文件（使用 .h 扩展名以便 Unity 识别）
+        lines.append(f'#include "{class_name}.h"')
         lines.append("")
         
         # 包含额外头文件
@@ -625,7 +625,7 @@ class CppGenerator:
         impl_content = self.generate_implementation(class_name, members=members, methods=methods)
         
         return [
-            {"filename": f"{class_name}.hpp", "content": header_content},
+            {"filename": f"{class_name}.h", "content": header_content},
             {"filename": f"{class_name}.cpp", "content": impl_content}
         ]
     
