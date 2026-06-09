@@ -1,0 +1,14 @@
+{
+  "language": "string",
+  "outputDir": "./production/oc_string_v2",
+  "stringCount": 20000,
+  "stringMode": "sentence",
+  "stringLanguage": "objc",
+  "outputFileName": "HA5StringConstants",
+  "classPrefix": "HA5",
+  "randomSeed": 12345,
+  "stateFile": "./config/state_v2_string_oc.json",
+  "vocabularyFile": "./config/vocabulary_v2.json",
+  "overwrite": true,
+  "showStats": true
+}

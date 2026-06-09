@@ -1,0 +1,14 @@
+{
+  "language": "string",
+  "outputDir": "./production/cpp_string_v2",
+  "stringCount": 20000,
+  "stringMode": "sentence",
+  "stringLanguage": "cpp",
+  "outputFileName": "HA5StringConstants",
+  "classPrefix": "HA5",
+  "randomSeed": 12345,
+  "stateFile": "./config/state_v2_string_cpp.json",
+  "vocabularyFile": "./config/vocabulary_v2.json",
+  "overwrite": true,
+  "showStats": true
+}

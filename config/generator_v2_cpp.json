@@ -1,0 +1,18 @@
+{
+  "language": "cpp",
+  "outputDir": "./output_v2/cpp",
+  "stateFile": "./config/state_v2_cpp.json",
+  "vocabularyFile": "./config/vocabulary_v2.json",
+  "classPrefix": "HA5",
+  "classCount": 100,
+  "totalLineRange": [4000, 12000],
+  "linesPerClassRange": [40, 160],
+  "methodsPerClassRange": [6, 14],
+  "propertiesPerClassRange": [2, 5],
+  "randomSeed": 20260609,
+  "diversityLevel": "high",
+  "overwrite": true,
+  "generateRegistry": true,
+  "registryLanguage": "cpp",
+  "showStats": true
+}
