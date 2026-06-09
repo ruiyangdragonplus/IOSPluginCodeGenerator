@@ -29,43 +29,44 @@ class StringGenerator:
         """
         self.random.seed(seed)
     
+    def _word_pool(self) -> List[str]:
+        """词库中所有命名词的合并池（prefix + middle + suffixNoun）。"""
+        cv = self.vocabulary.get("class", {})
+        return cv.get("prefix", []) + cv.get("middle", []) + cv.get("suffixNoun", [])
+
     def generate_random_content(self, mode: str = "word") -> str:
         """
-        从词库随机组合生成内容
-        
+        从词库随机组合生成内容（高多样性：使用全部三类词的合并池，多词组合）。
+
         Args:
-            mode: 生成模式，"word" 为词汇，"sentence" 为句子
-            
+            mode: "word"（2-3 词）或 "sentence"（3-6 词）
+
         Returns:
             生成的 String 内容
         """
-        class_vocab = self.vocabulary.get("class", {})
-        prefixes = class_vocab.get("prefix", [])
-        middles = class_vocab.get("middle", [])
-        suffixes = class_vocab.get("suffixNoun", [])
-        
-        if mode == "sentence":
-            # 生成句子模式：2-4 个词组合
-            parts_count = self.random.randint(2, 4)
-            parts = []
-            
-            for _ in range(parts_count):
-                source = self.random.choice([prefixes, middles, suffixes])
-                if source:
-                    parts.append(self.random.choice(source))
-            
-            return " ".join(parts) if parts else "Default String Value"
-        else:
-            # 生成词汇模式：1-2 个词组合
-            parts_count = self.random.randint(1, 2)
-            parts = []
-            
-            if parts_count >= 1 and prefixes:
-                parts.append(self.random.choice(prefixes))
-            if parts_count >= 2 and middles:
-                parts.append(self.random.choice(middles))
-            
-            return " ".join(parts) if parts else "Default String Value"
+        pool = self._word_pool()
+        if not pool:
+            return "Default String Value"
+
+        # word: 2-3 词；sentence: 3-6 词。组合空间 ~ pool^n，远大于旧版的 1-2 词。
+        n = self.random.randint(3, 6) if mode == "sentence" else self.random.randint(2, 3)
+        parts = [self.random.choice(pool) for _ in range(n)]
+        return " ".join(parts)
+
+    def _unique_content(self, mode: str, used: set) -> str:
+        """生成一个与 used 集合不重复的内容；碰撞时追加词，最终必要时追加序号兜底。"""
+        pool = self._word_pool()
+        content = self.generate_random_content(mode)
+        attempts = 0
+        # 碰撞则追加一个词扩展，扩大区分度
+        while content in used and attempts < 20 and pool:
+            content = content + " " + self.random.choice(pool)
+            attempts += 1
+        # 仍冲突则以序号兜底，保证 100% 唯一
+        if content in used:
+            content = f"{content} {len(used)}"
+        used.add(content)
+        return content
     
     def generate_string_constant(self, index: int, mode: str = "word", prefix: str = "AB") -> Dict[str, str]:
         """
@@ -106,10 +107,11 @@ class StringGenerator:
         lines.append("#import <Foundation/Foundation.h>")
         lines.append("")
         
-        # 生成常量声明 - 使用 NSString* const 格式
+        # 生成常量声明 - 使用 NSString* const 格式（去重保证值多样性）
+        used: set = set()
         for i in range(string_count):
-            string_data = self.generate_string_constant(i, mode, prefix)
-            lines.append(f'NSString* const {string_data["constant_name"]} = @"{string_data["content"]}";')
+            content = self._unique_content(mode, used)
+            lines.append(f'NSString* const {prefix}StringConstant_{i} = @"{content}";')
         
         lines.append("")
         
@@ -145,10 +147,11 @@ class StringGenerator:
         lines.append("#include <cstdio>")
         lines.append("")
         
-        # 生成常量声明
+        # 生成常量声明（去重保证值多样性）
+        used: set = set()
         for i in range(string_count):
-            string_data = self.generate_string_constant(i, mode, prefix)
-            lines.append(f'static const char {string_data["constant_name"]}[] = "{string_data["content"]}";')
+            content = self._unique_content(mode, used)
+            lines.append(f'static const char {prefix}StringConstant_{i}[] = "{content}";')
         
         lines.append("")
         
