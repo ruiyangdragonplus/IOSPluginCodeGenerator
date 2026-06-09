@@ -1,12 +1,13 @@
 {
   "language": "string",
   "outputDir": "./production/oc_string",
-  "stringCount": 5000,
+  "stringCount": 20000,
   "stringMode": "word",
   "stringLanguage": "objc",
   "outputFileName": "MX11StringConstants",
   "randomSeed": 12345,
   "stateFile": "./config/state_string_oc.json",
   "vocabularyFile": "./config/vocabulary.json",
+  "overwrite": true,
   "showStats": true
 }

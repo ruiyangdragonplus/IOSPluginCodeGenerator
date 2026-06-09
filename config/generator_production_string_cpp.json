@@ -1,12 +1,13 @@
 {
   "language": "string",
   "outputDir": "./production/cpp_string",
-  "stringCount": 5000,
+  "stringCount": 20000,
   "stringMode": "word",
   "stringLanguage": "cpp",
   "outputFileName": "MX11StringConstants",
   "randomSeed": 12345,
   "stateFile": "./config/state_string_cpp.json",
   "vocabularyFile": "./config/vocabulary.json",
+  "overwrite": true,
   "showStats": true
 }
