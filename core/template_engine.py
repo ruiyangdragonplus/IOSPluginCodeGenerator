@@ -70,7 +70,8 @@ class TemplateEngine:
                 "    NSError *error = nil;",
                 "    dispatch_async(dispatch_get_main_queue(), ^{",
                 "        if (completion) { completion(error); }",
-                "    });"
+                "    });",
+                "});"
             ],
             "applicable_types": ["manager", "service", "processor", "storage"],
             "complexity": 3
@@ -81,7 +82,7 @@ class TemplateEngine:
             "body_template": [
                 "// Block callback method",
                 "NSLog(@\"%s called\", __func__);",
-                "id result = [self processResult];",
+                "id result = nil;",
                 "if (block) { block(result); }"
             ],
             "applicable_types": ["manager", "service", "factory", "observer"],
@@ -123,8 +124,7 @@ class TemplateEngine:
             "signature_format": "+ (instancetype){method_name};",
             "body_template": [
                 "// Factory method",
-                "instancetype instance = [[self alloc] init];",
-                "[instance setup];",
+                "id instance = [[self alloc] init];",
                 "return instance;"
             ],
             "applicable_types": ["factory", "builder", "manager"],
@@ -135,7 +135,7 @@ class TemplateEngine:
             "signature_format": "+ (instancetype)sharedInstance;",
             "body_template": [
                 "// Singleton access",
-                "static instancetype sharedInstance = nil;",
+                "static id sharedInstance = nil;",
                 "static dispatch_once_t onceToken;",
                 "dispatch_once(&onceToken, ^{",
                 "    sharedInstance = [[self alloc] init];",
@@ -154,7 +154,7 @@ class TemplateEngine:
                 "NSString *cacheKey = [NSString stringWithFormat:@\"%@_%@\", NSStringFromClass([self class]), key];",
                 "id cached = [self.cache objectForKey:cacheKey];",
                 "if (cached) { return cached; }",
-                "id value = [self fetchValueForKey:key];",
+                "id value = [NSString stringWithFormat:@\"value_%@\", key];",
                 "if (value) { [self.cache setObject:value forKey:cacheKey]; }",
                 "return value;"
             ],
@@ -180,10 +180,8 @@ class TemplateEngine:
             "signature_format": "- (void){method_name}WithMessage:(NSString *)message;",
             "body_template": [
                 "// Logging method",
-                "NSString *timestamp = [NSDateFormatter localizedStringFromDate:[NSDate date] dateStyle:NSDateFormatterMediumStyle timeStyle:NSDateFormatterMediumStyle];",
-                "NSString *logMessage = [NSString stringWithFormat:@\"[%@] %@: %@\", timestamp, NSStringFromClass([self class]), message];",
-                "NSLog(@\"%@\", logMessage);",
-                "[self writeLog:message];"
+                "NSString *logMessage = [NSString stringWithFormat:@\"[%@] %@\", NSStringFromClass([self class]), message];",
+                "NSLog(@\"%@\", logMessage);"
             ],
             "applicable_types": ["logger", "monitor", "observer", "service"],
             "complexity": 2
@@ -193,8 +191,7 @@ class TemplateEngine:
             "signature_format": "- (instancetype){method_name}:(id)value;",
             "body_template": [
                 "// Chainable method",
-                "NSLog(@\"%s called\", __func__);",
-                "_currentValue = value;",
+                "NSLog(@\"%s called with %@\", __func__, value);",
                 "return self;"
             ],
             "applicable_types": ["builder", "factory", "adapter"],
@@ -207,10 +204,7 @@ class TemplateEngine:
                 "// Loop processing method",
                 "NSLog(@\"%s called with array count: %lu\", __func__, (unsigned long)array.count);",
                 "for (id obj in array) {",
-                "[self processObject:obj];",
-                "if ([obj respondsToSelector:@selector(validate)]) {",
-                "if (![obj validate]) { continue; }",
-                "}",
+                "NSLog(@\"  processing: %@\", obj);",
                 "}"
             ],
             "applicable_types": ["processor", "manager", "service"],
@@ -234,13 +228,13 @@ class TemplateEngine:
         },
         "generic_method": {
             "description": "泛型方法",
-            "signature_format": "- (NSArray<T> *){method_name}WithItems:(NSArray<T> *)items;",
+            "signature_format": "- (NSArray *){method_name}WithItems:(NSArray *)items;",
             "body_template": [
                 "// Generic method",
                 "NSLog(@\"%s called\", __func__);",
                 "NSMutableArray *result = [NSMutableArray arrayWithCapacity:items.count];",
                 "for (id item in items) {",
-                "    [result addObject:[self transformItem:item]];",
+                "    [result addObject:item];",
                 "}",
                 "return result;"
             ],
@@ -250,6 +244,15 @@ class TemplateEngine:
     }
     
     # 代码块模板库
+    # 绝对安全的日志行：不引用任何方法参数/成员变量，无 return，无花括号。
+    # 用于多样性插入，保证不会引入未声明标识符。
+    _SAFE_LOG_LINES = [
+        "NSLog(@\"[DEBUG] %@ called\", NSStringFromSelector(_cmd));",
+        "os_log(OS_LOG_DEFAULT, \"[INFO] %{public}s\", __func__);",
+        "NSLog(@\"%s invoked\", __func__);",
+        "NSLog(@\"[TRACE] %@\", NSStringFromSelector(_cmd));",
+    ]
+
     CODE_BLOCK_TEMPLATES = {
         "log": [
             "NSLog(@\"[DEBUG] %@ called\", NSStringFromSelector(_cmd));",
@@ -668,15 +671,7 @@ class TemplateEngine:
         """
         body_template = template.get("body_template", [])
         body_lines = list(body_template)  # 复制模板
-        
-        # 获取方法中可用的变量名（从参数中）
-        available_vars = set()
-        if params:
-            for param in params:
-                param_name = param.get("name", "")
-                if param_name:
-                    available_vars.add(param_name)
-        
+
         # 检查模板是否已经是完整的方法体（包含块语法或复杂结构）
         # 如果是，不添加额外的代码块
         is_complete_body = False
@@ -704,148 +699,19 @@ class TemplateEngine:
             is_complete_body = True
         
         # 如果需要增加代码块多样性且模板不是完整的方法体
+        # 仅插入「绝对安全」的日志行（不引用任何变量、不含 return、不含花括号），
+        # 避免引入未声明标识符或与返回类型冲突的 return。
         if enable_code_blocks and not is_complete_body:
-            # 随机插入额外的代码块
-            block_type = self.random.choice(list(self.CODE_BLOCK_TEMPLATES.keys()))
-            code_block = self.CODE_BLOCK_TEMPLATES[block_type]
-            extra_line = self.random.choice(code_block)
-            
-            # 在方法体开始处插入日志或验证代码
-            # 但只插入使用可用变量的代码块
-            if block_type in ["log", "validation", "nullCheck"]:
-                # 检查代码块是否只使用可用变量
-                if self._code_block_uses_valid_vars(extra_line, available_vars):
-                    # 处理多行代码块
-                    for line in extra_line.split('\n'):
-                        if line.strip():
-                            body_lines.insert(1, line)
-                            break  # 只插入第一行
-            elif block_type in ["loop", "condition"]:
-                # 对于循环和条件代码块，将多行拆分成单独的行
-                for line in extra_line.split('\n'):
-                    if line.strip():
-                        body_lines.append(line)
+            extra_line = self.random.choice(self._SAFE_LOG_LINES)
+            body_lines.insert(1, extra_line)
         
         # 处理返回类型占位符
         default_value = self._get_default_value_for_type(return_type)
         body_lines = [line.replace("{default_value}", default_value) for line in body_lines]
-        
-        # 过滤掉使用未定义变量的行
-        filtered_lines = []
-        import re
-        for line in body_lines:
-            stripped = line.strip()
-            # 跳过包含 return 语句且带有返回值的行（仅针对 void 返回类型）
-            if return_type == "void" and stripped.startswith("return ") and stripped != "return;":
-                # 检查是否是 instancetype/nil/self 类型的返回（保留这些）
-                # 匹配：return nil; return self; return instance; return id; return sharedInstance; 等
-                if re.match(r'return\s+(nil|self|instance|id|instanceType|nullptr|sharedInstance)\s*;', stripped, re.IGNORECASE):
-                    # 保留这些返回语句
-                    pass
-                elif re.match(r'return\s+\w+\s*;', stripped):
-                    # 这是普通变量返回，跳过
-                    continue
-                else:
-                    # 其他 return 语句，跳过
-                    continue
-            # 处理条件语句中的 return（如 if (condition) { return X; }）
-            if return_type == "void" and re.search(r'\breturn\s+\w+\s*;', stripped):
-                if stripped.startswith("if ") or stripped.startswith("if("):
-                    # 保留 if 条件但移除 return 部分
-                    # 简单处理：跳过这行
-                    continue
-            # 跳过使用未定义变量的行（但保留注释和 return 语句）
-            if not stripped.startswith("return ") and not stripped.startswith("//"):
-                if not self._code_block_uses_valid_vars(line, available_vars):
-                    # 替换为安全的注释或空行
-                    if "//" not in line:
-                        continue
-            filtered_lines.append(line)
-        body_lines = filtered_lines
-        
+
+        # 模板正文已为自包含、变量自洽（仅引用形参/局部/已声明成员），
+        # 不再做易误删声明行的"变量过滤"。返回类型一致性由调用方按声明返回类型兜底。
         return body_lines
-    
-    def _code_block_uses_valid_vars(self, code_line: str, available_vars: set) -> bool:
-        """
-        检查代码行是否只使用可用的变量
-        
-        Args:
-            code_line: 代码行
-            available_vars: 可用变量名集合
-            
-        Returns:
-            如果代码行只使用可用变量或没有使用变量则返回 True
-        """
-        import re
-        
-        # 如果没有任何可用变量，只允许不包含变量引用的代码
-        if not available_vars:
-            # 检查是否包含常见的变量引用模式
-            var_pattern = r'\b(array|block|key|value|object|result|param|param\d+)\b'
-            matches = re.findall(var_pattern, code_line)
-            return len(matches) == 0
-        
-        # 提取代码行中使用的变量名
-        var_pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b'
-        matches = re.findall(var_pattern, code_line)
-        
-        # 过滤掉 Objective-C 关键字和方法名
-        objc_keywords = {
-            'if', 'else', 'for', 'in', 'while', 'do', 'switch', 'case', 'default',
-            'return', 'break', 'continue', 'goto', 'sizeof', 'typeof',
-            'self', 'super', 'nil', 'Nil', 'NULL', 'YES', 'NO',
-            'id', 'Class', 'SEL', 'IMP', 'BOOL', 'instancetype',
-            'NSString', 'NSArray', 'NSDictionary', 'NSSet', 'NSMutableArray',
-            'NSMutableDictionary', 'NSMutableSet', 'NSNumber', 'NSDate',
-            'NSLog', 'NSAssert', 'NSParameterAssert',
-            'dispatch_async', 'dispatch_get_global_queue', 'dispatch_get_main_queue',
-            'dispatch_once', 'dispatch_once_t',
-            'autorelease', 'retain', 'release', 'copy', 'mutableCopy',
-            'alloc', 'init', 'new', 'dealloc',
-            'respondsToSelector', 'performSelector', 'isKindOfClass',
-            'stringWithFormat', 'arrayWithCapacity', 'dictionaryWithCapacity',
-            'setObject', 'objectForKey', 'addObject', 'removeObject',
-            'count', 'length', 'isEmpty', 'description',
-            'class', 'selector', 'method', 'encode',
-            'true', 'false', 'nullptr', 'void', 'int', 'float', 'double',
-            'char', 'short', 'long', 'unsigned', 'signed', 'const', 'static',
-            'extern', 'register', 'volatile', 'inline', 'virtual', 'explicit',
-            'friend', 'typedef', 'enum', 'struct', 'union', 'namespace',
-            'using', 'template', 'typename', 'class', 'public', 'private', 'protected',
-            'try', 'catch', 'throw', 'new', 'delete', 'this',
-            'OS_LOG_DEFAULT', 'os_log', 'NSLocalizedDescriptionKey',
-            'NSError', 'errorWithDomain', 'code', 'userInfo',
-            'NSMutableArray', 'arrayWithCapacity', 'NSSet', 'set',
-            'NSDateFormatter', 'localizedStringFromDate', 'dateStyle', 'timeStyle',
-            'NSDate', 'NSDateFormatterMediumStyle',
-            'NSStringFromClass', 'NSStringFromSelector',
-            'func', 'cmd', 'self', 'cache', 'fetchValueForKey',
-            'processObject', 'validate', 'processResult', 'writeLog',
-            'currentValue', '_currentValue',
-            'i', 'idx', 'stop', 'obj', 'item', 'obj', 'count', 'maxCount',
-            'condition', 'state', 'StateA', 'StateB', 'StateC',
-            'type', 'TypeA', 'TypeB', 'TypeC', 'Unknown',
-            'message', 'timestamp', 'logMessage',
-            'identifier', 'cached', 'object',
-            'array', 'block', 'key', 'value', 'result', 'param', 'error',
-            'completion', 'callback', 'success',
-            'onceToken', 'sharedInstance', 'instance',
-            'queue', 'operation', 'main', 'global',
-            'OS_LOG_DEFAULT', 'public',
-            'typeid', 'typename', 'begin', 'end',
-            'OSLogType', 'OSLog',
-            'enumerateObjectsUsingBlock'
-        }
-        
-        for match in matches:
-            if match not in available_vars and match not in objc_keywords:
-                # 检查是否是指针类型声明的一部分
-                if match in ['NSString', 'NSArray', 'NSDictionary', 'NSSet', 'id', 'NSObject', 'NSError', 'NSDate', 'NSNumber', 'NSCache', 'NSOperationQueue', 'NSDateFormatter', 'NSMutableArray', 'NSMutableDictionary']:
-                    continue
-                # 这是一个未定义的变量
-                return False
-        
-        return True
     
     def _get_default_value_for_type(self, return_type: str) -> str:
         """

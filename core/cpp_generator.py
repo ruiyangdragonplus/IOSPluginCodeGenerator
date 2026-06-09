@@ -228,45 +228,45 @@ class CppGenerator:
         
         return "\n".join(lines)
     
-    def _generate_method_declaration(self, method: Dict[str, Any], class_name: str = "") -> str:
+    @staticmethod
+    def _method_is_static(method: Dict[str, Any]) -> bool:
+        """判断方法是否为 static（工厂/单例）。"""
+        if method.get("is_static"):
+            return True
+        sig = method.get("template", {}).get("signature_format", "")
+        return sig.strip().startswith("static")
+
+    def _render_cpp_signature(self, method: Dict[str, Any], class_name: str,
+                              for_impl: bool) -> str:
         """
-        生成 C++ 方法声明
-        
+        唯一签名渲染器：头文件声明 与 实现定义 共用此函数，
+        都从已解析的 return_type + params 渲染，逐字一致（杜绝头实分叉）。
+
         Args:
-            method: 方法信息
-            class_name: 类名（用于单例/工厂方法）
-            
-        Returns:
-            方法声明字符串
+            for_impl: True 生成实现签名 "ret Class::name(params)"，
+                      False 生成头文件声明 "    [static ]ret name(params);"
         """
         method_name = method.get("name", "")
         return_type = method.get("return_type", "void")
         params = method.get("params", [])
-        template = method.get("template", {})
-        
-        # 如果有模板，使用模板中的签名格式
-        if template:
-            signature_format = template.get("signature_format", "")
-            if signature_format:
-                signature = signature_format.replace("{method_name}", method_name)
-                signature = signature.replace("{class_name}", class_name)
-                signature = signature.replace("{return_type}", return_type)
-                return f"    {signature};"
-        
-        # 构建参数列表
-        param_strs = []
-        for param in params:
-            param_name = param.get("name", "")
-            param_type = param.get("type", "void")
-            param_strs.append(self.cpp_type_system.generate_param_declaration(param_name, param_type))
-        
+        is_static = self._method_is_static(method)
+
+        param_strs = [
+            self.cpp_type_system.generate_param_declaration(
+                p.get("name", ""), p.get("type", "void"))
+            for p in params
+        ]
         params_str = ", ".join(param_strs)
-        
-        # 构建完整声明
-        decl = f"    {return_type} {method_name}({params_str})"
-        decl += ";"
-        
-        return decl
+
+        if for_impl:
+            # C++ 定义不重复 static 关键字，且方法名前加 Class::
+            return f"{return_type} {class_name}::{method_name}({params_str})"
+        prefix = "static " if is_static else ""
+        return f"    {prefix}{return_type} {method_name}({params_str});"
+
+    def _generate_method_declaration(self, method: Dict[str, Any], class_name: str = "") -> str:
+        """生成 C++ 方法声明（委托唯一签名渲染器）。"""
+        return self._render_cpp_signature(method, class_name, for_impl=False)
     
     def generate_implementation(
         self,
@@ -352,23 +352,12 @@ class CppGenerator:
         Returns:
             方法实现字符串
         """
-        method_name = method.get("name", "")
         return_type = method.get("return_type", "void")
-        params = method.get("params", [])
         template = method.get("template", {})
-        
-        # 构建方法签名
-        param_strs = []
-        for param in params:
-            param_name = param.get("name", "")
-            param_type = param.get("type", "void")
-            param_strs.append(self.cpp_type_system.generate_param_declaration(param_name, param_type))
-        
-        params_str = ", ".join(param_strs)
-        
-        # 方法签名 (C++ 语法：返回类型 类名::方法名 (参数))
-        sig = f"{return_type} {class_name}::{method_name}({params_str})"
-        
+
+        # 方法签名：与头文件声明共用唯一渲染器，保证逐字一致
+        sig = self._render_cpp_signature(method, class_name, for_impl=True)
+
         lines = []
         lines.append(f"{sig} {{")
         
@@ -383,9 +372,12 @@ class CppGenerator:
         
         for body_line in body_lines:
             lines.append(f"    {body_line}")
-        
-        # 返回值（如果非 void）
-        if return_type != "void":
+
+        # 返回值（如果非 void）：仅当方法体尚未包含 return 时才补兜底，
+        # 避免产生不可达的重复 return（止血修复）
+        import re as _re
+        body_has_return = any(_re.search(r"\breturn\b", bl) for bl in body_lines)
+        if return_type != "void" and not body_has_return:
             default_value = self.cpp_type_system.get_default_value(return_type)
             if default_value:
                 lines.append(f"    return {default_value};")
@@ -498,6 +490,9 @@ class CppGenerator:
             else:
                 return "void"
         
+        # 链式方法：返回自身引用 ClassName&
+        if signature_format.startswith("{class_name}"):
+            return class_name + "&"
         # 从签名格式中提取返回类型
         if signature_format.startswith("void "):
             return "void"
@@ -546,42 +541,50 @@ class CppGenerator:
             参数列表
         """
         signature_format = template.get("signature_format", "void {method_name}()")
+
+        # 直接从签名格式解析真实的参数名与类型（而非按类型猜名字），
+        # 确保参数名与模板函数体内引用的名字逐字一致，避免未声明标识符。
+        start = signature_format.find("(")
+        end = signature_format.rfind(")")
+        if start == -1 or end == -1 or end <= start + 1:
+            return []
+        inner = signature_format[start + 1:end].strip()
+        if not inner:
+            return []
+
         params = []
-        
-        # 解析签名中的参数
-        if "std::function<void()>" in signature_format:
-            params.append({"name": "callback", "type": "std::function<void()>"})
-        elif "std::function<void(void*)>" in signature_format:
-            params.append({"name": "callback", "type": "std::function<void(void*)>"})
-        elif "std::function<void(const std::string&)>" in signature_format:
-            params.append({"name": "callback", "type": "std::function<void(const std::string&)"})
-        elif "std::function<void(const std::string*)>" in signature_format:
-            params.append({"name": "callback", "type": "std::function<void(const std::string*)>"})
-        elif "const std::string&" in signature_format:
-            if "key" in signature_format.lower():
-                params.append({"name": "key", "type": "const std::string&"})
-            elif "message" in signature_format.lower():
-                params.append({"name": "message", "type": "const std::string&"})
-            else:
-                params.append({"name": "value", "type": "const std::string&"})
-        elif "std::string&" in signature_format:
-            params.append({"name": "error", "type": "std::string&"})
-        elif "std::string*" in signature_format:
-            params.append({"name": "error", "type": "std::string*"})
-        elif "const void*" in signature_format:
-            params.append({"name": "value", "type": "const void*"})
-        elif "const std::vector<void*>&" in signature_format:
-            params.append({"name": "array", "type": "const std::vector<void*>&"})
-        elif "const std::vector<std::string>&" in signature_format:
-            params.append({"name": "items", "type": "const std::vector<std::string>&"})
-        elif "int type" in signature_format or "inttype" in signature_format.replace(" ", ""):
-            params.append({"name": "type", "type": "int"})
-        elif "int count" in signature_format or "intcount" in signature_format.replace(" ", ""):
-            params.append({"name": "count", "type": "int"})
-        elif "void* value" in signature_format:
-            params.append({"name": "value", "type": "void*"})
-        
+        for chunk in self._split_top_level(inner):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            # 末尾标识符为参数名，其余为类型
+            m = __import__("re").match(r"^(.*?)([A-Za-z_]\w*)$", chunk)
+            if not m:
+                continue
+            ptype = m.group(1).strip()
+            pname = m.group(2).strip()
+            if not ptype:  # 形如 "int"（无名），跳过或按通用名
+                ptype, pname = chunk, "param0"
+            params.append({"name": pname, "type": ptype})
         return params
+
+    @staticmethod
+    def _split_top_level(s: str) -> List[str]:
+        """按顶层逗号切分参数（尊重 <> 与 () 的嵌套）。"""
+        parts, depth, cur = [], 0, []
+        for ch in s:
+            if ch in "<(":
+                depth += 1
+            elif ch in ">)":
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            parts.append("".join(cur))
+        return parts
     
     def _generate_method_name_for_template(self, template: Dict[str, Any], index: int) -> str:
         """

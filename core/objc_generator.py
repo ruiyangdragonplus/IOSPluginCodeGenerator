@@ -261,6 +261,10 @@ class ObjCGenerator:
         
         # 使用与头文件相同的方法生成方法签名
         method_sig = self._generate_method_signature_for_implementation(method)
+
+        # 真实声明的返回类型：从签名里提取（而非可能被 override 的 return_type 字段），
+        # 保证兜底 return 与签名一致，避免「void 方法却 return 值」
+        decl_return = self._extract_return_type_from_signature(method_sig) or "void"
         
         # 生成方法体
         lines = []
@@ -333,20 +337,20 @@ class ObjCGenerator:
                 if stripped.endswith('{'):
                     indent_stack.append(current_indent + 1)
         
-        # 返回值 - 仅当返回类型不是 void 时添加
+        # 返回值 - 仅当（签名声明的）返回类型不是 void 时添加
         # 但如果模板已经是完整的方法体（包含 return），不添加
-        if return_type != "void" and not is_complete_template:
-            if return_type in ["int", "NSInteger"]:
+        if decl_return != "void" and not is_complete_template:
+            if decl_return in ["int", "NSInteger", "NSUInteger"]:
                 lines.append("    return 0;")
-            elif return_type in ["float", "double", "CGFloat"]:
+            elif decl_return in ["float", "double", "CGFloat"]:
                 lines.append("    return 0.0f;")
-            elif return_type == "BOOL":
+            elif decl_return == "BOOL":
                 lines.append("    return YES;")
-            elif return_type == "NSString *":
+            elif "NSString" in decl_return:
                 lines.append('    return @"";')
-            elif return_type == "NSArray *":
+            elif decl_return.startswith("NSArray"):
                 lines.append("    return @[];")
-            elif return_type == "NSDictionary *":
+            elif decl_return.startswith("NSDictionary"):
                 lines.append("    return @{};")
             else:
                 lines.append("    return nil;")
@@ -515,12 +519,11 @@ class ObjCGenerator:
         # 从模板的 signature_format 中提取返回类型
         signature_format = template.get("signature_format", "")
         return_type = self._extract_return_type_from_signature(signature_format)
-        
-        # 如果无法从签名中提取返回类型，则随机生成
-        if not return_type:
-            builtin = self.template_engine.vocabulary.get("builtin", {}) if self.template_engine.vocabulary else {}
-            return_types = builtin.get("returnType", {}).get("primitive", ["void"])
-            return_type = self.template_engine.random.choice(return_types)
+
+        # 如果无法提取、或提取到的是占位符（如 {return_type}），则选一个具体类型
+        if not return_type or "{" in return_type:
+            concrete_types = ["NSInteger", "BOOL", "NSString *", "id", "NSArray *", "NSDictionary *"]
+            return_type = self.template_engine.random.choice(concrete_types)
         
         return {
             "name": method_name,

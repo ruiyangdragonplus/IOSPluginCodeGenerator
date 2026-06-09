@@ -51,7 +51,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "body_template": [
             "// Callback method",
             'std::cout << __FUNCTION__ << " called" << std::endl;',
-            "void* result = this->processResult();",
+            "void* result = nullptr;",
             "if (callback) { callback(result); }"
         ],
         "applicable_types": ["manager", "service", "factory", "observer"],
@@ -95,7 +95,6 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "body_template": [
             "// Factory method",
             "auto instance = std::make_unique<{class_name}>();",
-            "instance->setup();",
             "return instance;"
         ],
         "applicable_types": ["factory", "builder", "manager"],
@@ -120,7 +119,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
             'std::cout << __FUNCTION__ << " called with key: " << key << std::endl;',
             "auto it = cache_.find(key);",
             "if (it != cache_.end()) { return it->second; }",
-            "void* value = this->fetchValue(key);",
+            "void* value = nullptr;",
             "cache_[key] = value;",
             "return value;"
         ],
@@ -133,10 +132,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "body_template": [
             "// Cache logic method",
             'std::cout << __FUNCTION__ << " called with key: " << key << std::endl;',
-            "auto it = cache_.find(key);",
-            "if (it != cache_.end()) { return it->second; }",
-            "std::string value = this->fetchValue(key);",
-            "cache_[key] = value;",
+            "std::string value = \"value_\" + key;",
             "return value;"
         ],
         "applicable_types": ["storage", "cache", "service", "manager"],
@@ -172,8 +168,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "body_template": [
             "// Logging method",
             'std::string timestamp = "[INFO]";',
-            'std::cout << timestamp << ": " << message << std::endl;',
-            "this->writeLog(message);"
+            'std::cout << timestamp << ": " << message << std::endl;'
         ],
         "applicable_types": ["logger", "monitor", "observer", "service"],
         "complexity": 2
@@ -195,8 +190,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "signature_format": "{class_name}& {method_name}(const std::string& value)",
         "body_template": [
             "// Chainable method",
-            'std::cout << __FUNCTION__ << " called" << std::endl;',
-            "currentValue_ = value;",
+            'std::cout << __FUNCTION__ << " called with " << value << std::endl;',
             "return *this;"
         ],
         "applicable_types": ["builder", "factory", "adapter"],
@@ -209,7 +203,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
             "// Loop processing method",
             'std::cout << __FUNCTION__ << " called with array size: " << array.size() << std::endl;',
             "for (const auto& obj : array) {",
-            "    this->processObject(obj);",
+            "    (void)obj;",
             "}"
         ],
         "applicable_types": ["processor", "manager", "service"],
@@ -255,7 +249,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
             'std::cout << __FUNCTION__ << " called" << std::endl;',
             "std::vector<void*> result;",
             "for (const auto& item : items) {",
-            "    result.push_back(this->transformItem(item));",
+            "    result.push_back(item);",
             "}",
             "return result;"
         ],
@@ -282,7 +276,7 @@ CPP_METHOD_TEMPLATES: Dict[str, Dict[str, Any]] = {
             "// Vector operation method",
             'std::cout << __FUNCTION__ << " called with " << items.size() << " items" << std::endl;',
             "for (const auto& item : items) {",
-            "    this->processItem(item);",
+            "    (void)item;",
             "}"
         ],
         "applicable_types": ["processor", "manager", "service"],
@@ -364,7 +358,15 @@ CPP_CODE_BLOCKS: Dict[str, List[str]] = {
 
 class CppTemplateEngine:
     """C++ 模板引擎类 - 完全独立于 Objective-C"""
-    
+
+    # 绝对安全的日志行：不引用任何参数/成员，无 return。用于多样性插入。
+    _SAFE_LOG_LINES = [
+        'std::cout << __FUNCTION__ << " called" << std::endl;',
+        'std::cout << "[DEBUG] " << __FUNCTION__ << std::endl;',
+        'std::cout << "[INFO] " << __FUNCTION__ << std::endl;',
+        'std::cout << "[TRACE] " << __FUNCTION__ << std::endl;',
+    ]
+
     def __init__(self):
         """初始化 C++ 模板引擎"""
         self.templates = CPP_METHOD_TEMPLATES
@@ -431,11 +433,12 @@ class CppTemplateEngine:
                      for line in body_lines]
         
         # 添加额外代码块增加多样性
+        # 仅插入「绝对安全」的日志行（不引用任何变量、不含 return），
+        # 避免引入未声明标识符或与返回类型冲突的 return。
         if enable_code_blocks and len(body_lines) > 1:
-            block_type = self.rng.choice(["log", "validation", "nullCheck"])
-            extra_line = self.get_code_block(block_type)
+            extra_line = self.rng.choice(self._SAFE_LOG_LINES)
             body_lines.insert(1, extra_line)
-        
+
         return body_lines
     
     def _get_default_value(self, return_type: str) -> str:
